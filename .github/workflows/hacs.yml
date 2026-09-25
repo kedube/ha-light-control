@@ -1,0 +1,19 @@
+name: HACS validation
+
+# The release workflow validates after every release; this catches repository
+# setting changes (description, topics, issues) in between.
+on:
+  schedule:
+    - cron: '30 5 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: plugin

@@ -1,0 +1,38 @@
+{
+  "name": "ha-light-control",
+  "version": "0.0.0",
+  "description": "Home Assistant dashboard card that auto-discovers your lights and smart plugs, groups them by room, and makes them fun to control.",
+  "type": "module",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "author": "Katherine Dub\u00e9",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kedube/ha-light-control.git"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:demo": "node scripts/build.mjs --demo",
+    "dev": "node scripts/build.mjs --serve",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tests/unit/**/*.test.ts\"",
+    "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/**/*.test.mjs\"",
+    "screenshots": "node scripts/screenshots.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "lit": "^3.3.3"
+  },
+  "devDependencies": {
+    "@mdi/js": "^7.4.47",
+    "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
+    "playwright-core": "^1.63.0",
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

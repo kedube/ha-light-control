@@ -1,0 +1,6 @@
+{
+  "name": "Light Control Card",
+  "filename": "ha-light-control.js",
+  "homeassistant": "2024.11.0",
+  "hide_default_branch": true
+}

@@ -1,0 +1,87 @@
+name: Release
+
+# Every push to main that passes CI becomes a release: 0.1, 0.2 … 0.9, 1.0, 1.1 …
+# Put [skip release] in the commit message to push without releasing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One release at a time, in push order, so two quick pushes never claim the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Publish release
+    needs: ci
+    if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      released: ${{ steps.version.outputs.changed }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Work out the next version
+        id: version
+        shell: bash # enables pipefail, so a crash here fails the job instead of silently skipping the release
+        run: node scripts/release/next-version.mjs | tee -a "$GITHUB_OUTPUT"
+
+      - name: Build the card
+        if: steps.version.outputs.changed == 'true'
+        run: npm run build
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Write release notes
+        if: steps.version.outputs.changed == 'true'
+        shell: bash
+        run: >-
+          node scripts/release/notes.mjs
+          --version "${{ steps.version.outputs.version }}"
+          --previous "${{ steps.version.outputs.previous }}"
+          > release-notes.md
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" dist/ha-light-control.js \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --notes-file release-notes.md
+          echo "Released $TAG" >> "$GITHUB_STEP_SUMMARY"
+
+  hacs:
+    name: HACS validation
+    needs: release
+    if: ${{ needs.release.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: plugin

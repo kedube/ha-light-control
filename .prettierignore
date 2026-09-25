@@ -1,0 +1,6 @@
+dist/
+demo/build/
+node_modules/
+package-lock.json
+docs/images/
+LICENSE

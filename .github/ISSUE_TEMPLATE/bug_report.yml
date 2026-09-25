@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the card doesn't work or looks wrong.
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead? Screenshots help a lot.
+    validations:
+      required: true
+  - type: input
+    id: card-version
+    attributes:
+      label: Card version
+      description: Shown in the browser console as "LIGHT CONTROL CARD 0.x", or in HACS.
+      placeholder: '0.4'
+    validations:
+      required: true
+  - type: input
+    id: ha-version
+    attributes:
+      label: Home Assistant version
+      description: Settings → About.
+      placeholder: '2026.9.2'
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser or app
+      placeholder: Chrome 140 on Windows, Home Assistant app on iOS 19, …
+  - type: textarea
+    id: config
+    attributes:
+      label: Card configuration
+      description: The card's YAML (open the card editor and choose "Show code editor").
+      render: yaml
+  - type: textarea
+    id: devices
+    attributes:
+      label: Affected lights or plugs
+      description: Which integration provides them (Hue, ZHA, Zigbee2MQTT, Shelly, Matter, …)? For discovery problems, the entity's state attributes from Developer tools → States are very useful.
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console errors
+      description: Open the browser's developer tools (F12) and copy any red errors.
+      render: text
