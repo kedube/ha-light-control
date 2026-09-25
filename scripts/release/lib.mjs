@@ -1,8 +1,8 @@
 // Pure helpers for the release workflow: x.y versioning and commit-based release notes.
 
-/** Accepts "v1.4" or "1.4". Returns null for anything that isn't x.y. */
+/** Releases are tagged with the plain version: "1.4", never "v1.4". Returns null for any other tag. */
 export function parseVersion(tag) {
-  const match = /^v?(\d+)\.(\d+)$/.exec(String(tag).trim());
+  const match = /^(\d+)\.(\d+)$/.exec(String(tag).trim());
   return match ? { major: Number(match[1]), minor: Number(match[2]) } : null;
 }
 
@@ -117,7 +117,6 @@ export function commitDetails(body) {
  * @returns {string}
  */
 export function buildReleaseNotes({ version, previous, commits, files = [], stats = '', repo }) {
-  const tag = `v${version}`;
   const grouped = new Map(SECTIONS.map(([key]) => [key, []]));
   for (const commit of commits) {
     const { section, text } = classifyCommit(commit.subject, commit.body);
@@ -160,8 +159,8 @@ export function buildReleaseNotes({ version, previous, commits, files = [], stat
   if (repo) {
     lines.push(
       previous
-        ? `**Full changelog:** https://github.com/${repo}/compare/${previous}...${tag}`
-        : `**Full history:** https://github.com/${repo}/commits/${tag}`,
+        ? `**Full changelog:** https://github.com/${repo}/compare/${previous}...${version}`
+        : `**Full history:** https://github.com/${repo}/commits/${version}`,
       '',
     );
   }

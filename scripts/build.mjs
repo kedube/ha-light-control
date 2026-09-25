@@ -11,12 +11,12 @@ const version = process.env.RELEASE_VERSION || devVersion();
 
 function devVersion() {
   try {
-    const tag = execFileSync('git', ['describe', '--tags', '--abbrev=0', '--match', 'v*'], {
+    const tag = execFileSync('git', ['describe', '--tags', '--abbrev=0', '--match', '[0-9]*.[0-9]*'], {
       stdio: ['ignore', 'pipe', 'ignore'],
     })
       .toString()
       .trim();
-    return `${tag.replace(/^v/, '')}-dev`;
+    return `${tag}-dev`;
   } catch {
     return 'dev';
   }

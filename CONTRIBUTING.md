@@ -79,10 +79,10 @@ Plain messages work too: ones starting with _Add_ count as features and ones sta
 Releases are automatic. Every push to `main` runs [`release.yml`](.github/workflows/release.yml):
 
 1. The full CI job runs: formatting, types, unit tests, build and browser tests.
-2. [`scripts/release/next-version.mjs`](scripts/release/next-version.mjs) picks the next version from the existing tags. Versions are `x.y` and go up by 0.1 each release, with the minor digit rolling over after 9: 0.1 → 0.2 → … → 0.9 → 1.0 → 1.1 → … → 1.9 → 2.0.
+2. [`scripts/release/next-version.mjs`](scripts/release/next-version.mjs) picks the next version from the existing tags. Versions are `x.y` and go up by 0.1 each release, with the minor digit rolling over after 9: 0.1 → 0.2 → … → 0.9 → 1.0 → 1.1 → … → 1.9 → 2.0. Only plain `x.y` tags count; a tag such as `v0.1` is ignored.
 3. The card is built with that version embedded (it's printed in the browser console).
 4. [`scripts/release/notes.mjs`](scripts/release/notes.mjs) writes release notes from the commits since the previous release, with a list of changed files and a comparison link.
-5. A GitHub release `vX.Y` is published with `ha-light-control.js` attached. HACS picks it up as an update.
+5. A GitHub release is published with `ha-light-control.js` attached. Its tag and title are the plain version, such as `0.4` (never `v0.4`). HACS picks it up as an update.
 6. HACS validation runs against the new release.
 
 Put `[skip release]` in a commit message to push without releasing. If a release job is re-run for a commit that is already released, it does nothing.

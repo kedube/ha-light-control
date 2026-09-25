@@ -1,5 +1,5 @@
 // Writes release notes for everything since the previous release tag.
-//   node scripts/release/notes.mjs --version 0.4 [--previous v0.3] [--repo owner/name]
+//   node scripts/release/notes.mjs --version 0.4 [--previous 0.3] [--repo owner/name]
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { buildReleaseNotes } from './lib.mjs';

@@ -1,7 +1,7 @@
 # Light Control Card
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
-[![Latest release](https://img.shields.io/github/v/release/kedube/ha-light-control?label=release)](https://github.com/kedube/ha-light-control/releases/latest)
+[![Latest release](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fgithub.com%2Fkedube%2Fha-light-control%2Freleases.atom&query=%2F%2F%2A%5Blocal-name%28%29%3D%27entry%27%5D%5B1%5D%2F%2A%5Blocal-name%28%29%3D%27title%27%5D&label=release&color=blue)](https://github.com/kedube/ha-light-control/releases/latest)
 [![Release workflow](https://github.com/kedube/ha-light-control/actions/workflows/release.yml/badge.svg)](https://github.com/kedube/ha-light-control/actions/workflows/release.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/kedube/ha-light-control)](LICENSE)
 

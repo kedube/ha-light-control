@@ -1,7 +1,7 @@
 // Prints the next release version and the previous tag as GitHub Actions outputs:
 //   version=0.4
-//   tag=v0.4
-//   previous=v0.3        (empty on the first release)
+//   tag=0.4              (the plain version; tags like v0.3 are ignored)
+//   previous=0.3         (empty on the first release)
 //   changed=true|false   (false when HEAD is already released)
 import { execFileSync } from 'node:child_process';
 import { latestTag, nextVersion } from './lib.mjs';
@@ -14,6 +14,6 @@ const version = nextVersion(tags);
 const changed = !previous || git('rev-list', '--count', `${previous}..HEAD`) !== '0';
 
 console.log(`version=${version}`);
-console.log(`tag=v${version}`);
+console.log(`tag=${version}`);
 console.log(`previous=${previous ?? ''}`);
 console.log(`changed=${changed}`);
