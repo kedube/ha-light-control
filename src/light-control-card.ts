@@ -9,6 +9,7 @@ import { outletStyleFor, type OutletStyle } from './graphics.ts';
 import type { HomeAssistant } from './ha-types.ts';
 import { icon, mdiLightbulbOffOutline, mdiPlay, mdiTuneVariant } from './icons.ts';
 import { setLanguage, t } from './localize.ts';
+import { balanceColumns, columnCount, columnWidth, estimateRoomHeight } from './room-columns.ts';
 import { buttonReset, themeVars } from './styles.ts';
 import { skyMode, type HouseRoom, type SunInfo } from './components/lc-house.ts';
 import type { SheetTarget } from './components/lc-sheet.ts';
@@ -18,6 +19,13 @@ import './components/lc-sheet.ts';
 import './components/lc-tile.ts';
 
 const FILTER_ON = '__on__';
+/** Height of a one-line title and summary over the house. */
+const HEAD_INSET = 62;
+
+/** "12 lights on · 3 plugs on · 362 W" that wraps between phrases, never inside one. */
+function phrases(parts: string[]) {
+  return parts.map((part, i) => html`<span class="phrase">${part}${i < parts.length - 1 ? ' ·' : ''}</span> `);
+}
 
 /** Which visible or state-hidden entities are currently unavailable or orphaned. */
 function stateSignature(discovery: Discovery, hass: HomeAssistant): string {
@@ -40,25 +48,43 @@ export class LightControlCard extends LitElement {
     _config: { state: true },
     _filter: { state: true },
     _sheet: { state: true },
+    _width: { state: true },
+    _headHeight: { state: true },
   };
 
   declare hass?: HomeAssistant;
   declare _config?: ResolvedConfig;
   declare _filter: string | null;
   declare _sheet: SheetRef | null;
+  /** The card's width, which decides how many room columns fit. */
+  declare _width: number;
+  /** The title and summary over the house, which wrap on narrow cards and in long languages. */
+  declare _headHeight: number;
 
   private readonly controller = new LightController(this);
   private discovery?: Discovery;
   private discoveryKey: unknown[] = [];
+  private resizeObserver?: ResizeObserver;
+  private observedHead?: Element;
 
   constructor() {
     super();
     this._filter = null;
     this._sheet = null;
+    this._width = 0;
+    this._headHeight = 0;
+  }
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.resizeObserver ??= new ResizeObserver((entries) => this.onResize(entries));
+    this.resizeObserver.observe(this);
+    if (this.observedHead) this.resizeObserver.observe(this.observedHead);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.resizeObserver?.disconnect();
     // Leaving the dashboard closes the dialog; don't pop it open again on return.
     this._sheet = null;
   }
@@ -139,6 +165,27 @@ export class LightControlCard extends LitElement {
     this.controller.hass = this.hass;
   }
 
+  protected override updated(): void {
+    const head = this.renderRoot.querySelector('.with-house .head-row') ?? undefined;
+    if (head === this.observedHead) return;
+    if (this.observedHead) this.resizeObserver?.unobserve(this.observedHead);
+    this.observedHead = head;
+    if (head) this.resizeObserver?.observe(head);
+  }
+
+  private onResize(entries: ResizeObserverEntry[]): void {
+    for (const entry of entries) {
+      const box = entry.borderBoxSize?.[0];
+      if (entry.target === this) {
+        const width = Math.round(box?.inlineSize ?? entry.contentRect.width);
+        if (width !== this._width) this._width = width;
+      } else if (entry.target === this.observedHead) {
+        const height = Math.ceil(box?.blockSize ?? (entry.target as HTMLElement).offsetHeight);
+        if (height !== this._headHeight) this._headHeight = height;
+      }
+    }
+  }
+
   // ─── Rendering ─────────────────────────────────────────────────────────────
 
   protected override render() {
@@ -162,16 +209,26 @@ export class LightControlCard extends LitElement {
         entities: filter === FILTER_ON ? room.entities.filter((e) => this.viewOf(e)?.on) : room.entities,
       }))
       .filter(({ entities }) => entities.length);
+    const columns = this.roomColumns(rooms);
 
     return html`
       <ha-card>
         ${this.renderHeader(discovery, summaries, all, dark)}
         ${config.show_room_filter && discovery.rooms.length > 1 ? this.renderChips(discovery.rooms, summaries, all, filter) : nothing}
-        <div class="rooms" @lc-tile-action=${this.onTileAction} @lc-tile-brightness=${this.onTileBrightness}>
-          ${repeat(
-            rooms,
-            ({ room }) => room.id,
-            ({ room, entities }) => this.renderRoom(room, entities, summaries.get(room.id)!, dark),
+        <div
+          class="rooms ${columns.length > 1 ? 'side-by-side' : ''}"
+          @lc-tile-action=${this.onTileAction}
+          @lc-tile-brightness=${this.onTileBrightness}
+        >
+          ${columns.map(
+            (column) =>
+              html`<div class="column">
+                ${repeat(
+                  column,
+                  ({ room }) => room.id,
+                  ({ room, entities }) => this.renderRoom(room, entities, summaries.get(room.id)!, dark),
+                )}
+              </div>`,
           )}
         </div>
         ${this.renderEmpty(discovery, rooms.length, filter)}
@@ -198,12 +255,12 @@ export class LightControlCard extends LitElement {
     return this.hass?.locale?.language ?? this.hass?.language;
   }
 
-  private summaryLine(all: Summary): string {
+  private summaryParts(all: Summary): string[] {
     const parts: string[] = [];
     if (all.lightsOn) parts.push(t('lights_on', { n: all.lightsOn }));
     if (all.plugsOn) parts.push(t('plugs_on', { n: all.plugsOn }));
     if (all.watts !== null && all.watts > 0) parts.push(formatWatts(all.watts, this.language));
-    return parts.length ? parts.join(' · ') : t('everything_off');
+    return parts.length ? parts : [t('everything_off')];
   }
 
   private renderHeader(discovery: Discovery, summaries: Map<string, Summary>, all: Summary, dark: boolean) {
@@ -215,8 +272,15 @@ export class LightControlCard extends LitElement {
     const sky = withHouse ? skyMode(sun) : undefined;
     const offTargets = config.room_switch_outlets ? [...all.lightIds, ...all.plugIds] : all.lightIds;
     const anyOn = all.lightsOn > 0 || (config.room_switch_outlets && all.plugsOn > 0);
+    const hasText = Boolean(config.title || config.show_summary);
+    // A title or summary that wraps (a narrow card, a long language) makes the header taller
+    // and moves the house down with it, instead of running across the roof.
+    const overflow = withHouse && hasText ? Math.max(0, this._headHeight - HEAD_INSET) : 0;
 
-    return html`<div class="header ${withHouse ? `with-house sky-${sky}` : ''}">
+    return html`<div
+      class="header ${withHouse ? `with-house sky-${sky}` : ''}"
+      style=${overflow ? `padding-top:${overflow}px` : nothing}
+    >
       ${
         withHouse
           ? html`<lc-house
@@ -224,7 +288,7 @@ export class LightControlCard extends LitElement {
               .floors=${discovery.floors.map((f) => ({ id: f.id, level: f.level }))}
               .selected=${this._filter !== FILTER_ON ? this._filter : null}
               .sun=${sun}
-              .topInset=${config.title || config.show_summary ? 62 : 12}
+              .topInset=${hasText ? HEAD_INSET + overflow : 12}
               ?dark=${dark}
               @lc-room-select=${(ev: CustomEvent<{ roomId: string }>) => this.toggleFilter(ev.detail.roomId)}
             ></lc-house>`
@@ -233,7 +297,7 @@ export class LightControlCard extends LitElement {
       <div class="head-row">
         <div class="head-text">
           ${config.title ? html`<h1>${config.title}</h1>` : nothing}
-          ${config.show_summary ? html`<div class="summary">${this.summaryLine(all)}</div>` : nothing}
+          ${config.show_summary ? html`<div class="summary">${phrases(this.summaryParts(all))}</div>` : nothing}
         </div>
         ${
           config.show_summary && anyOn
@@ -280,7 +344,7 @@ export class LightControlCard extends LitElement {
     };
   }
 
-  private roomCaption(s: Summary): string {
+  private roomCaptionParts(s: Summary): string[] {
     const parts: string[] = [];
     if (s.lights) {
       if (!s.lightsOn) parts.push(t('room_off'));
@@ -290,7 +354,11 @@ export class LightControlCard extends LitElement {
     }
     if (s.plugsOn) parts.push(t('plugs_on', { n: s.plugsOn }));
     if (s.watts !== null && s.watts > 0) parts.push(formatWatts(s.watts, this.language));
-    return parts.join(' · ');
+    return parts;
+  }
+
+  private roomCaption(s: Summary): string {
+    return this.roomCaptionParts(s).join(' · ');
   }
 
   private renderChips(rooms: Room[], summaries: Map<string, Summary>, all: Summary, filter: string | null) {
@@ -326,6 +394,21 @@ export class LightControlCard extends LitElement {
     </div>`;
   }
 
+  private showScenes(room: Room): boolean {
+    return this._config!.show_scenes && room.scenes.length > 0 && this._filter !== FILTER_ON;
+  }
+
+  /** Rooms in one column, or on a wide card, in balanced columns read top to bottom. */
+  private roomColumns<T extends { room: Room; entities: DiscoveredEntity[] }>(rooms: T[]): T[][] {
+    const count = columnCount(this._width, rooms.length);
+    if (count < 2) return rooms.length ? [rooms] : [];
+    const width = columnWidth(this._width, count);
+    const heights = rooms.map(({ room, entities }) =>
+      estimateRoomHeight(entities.length, this.showScenes(room), width),
+    );
+    return balanceColumns(heights, count).map((column) => column.map((i) => rooms[i]));
+  }
+
   private renderRoom(room: Room, entities: DiscoveredEntity[], s: Summary, dark: boolean) {
     const config = this._config!;
     const rgb = s.rgb ?? WARM_GLOW;
@@ -347,7 +430,7 @@ export class LightControlCard extends LitElement {
           <span class="room-icon"><ha-icon .icon=${room.icon}></ha-icon></span>
           <span class="room-text">
             <span class="room-name">${room.name}</span>
-            <span class="room-sub">${this.roomCaption(s)}</span>
+            <span class="room-sub">${phrases(this.roomCaptionParts(s))}</span>
           </span>
           ${hasLights ? icon(mdiTuneVariant, 'mdi tune') : nothing}
         </button>
@@ -369,7 +452,7 @@ export class LightControlCard extends LitElement {
         }
       </div>
       ${
-        config.show_scenes && room.scenes.length && this._filter !== FILTER_ON
+        this.showScenes(room)
           ? html`<div class="scenes">
               ${room.scenes.map(
                 (id) =>
@@ -532,6 +615,9 @@ export class LightControlCard extends LitElement {
         color: var(--lc-text-2);
         font-variant-numeric: tabular-nums;
       }
+      .phrase {
+        white-space: nowrap;
+      }
       .with-house h1,
       .with-house .summary {
         color: #fff;
@@ -634,9 +720,16 @@ export class LightControlCard extends LitElement {
       }
       .rooms {
         display: flex;
-        flex-direction: column;
+        align-items: flex-start;
         gap: 12px;
         padding: 12px 12px 0;
+      }
+      .column {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
       .room {
         position: relative;
@@ -719,16 +812,23 @@ export class LightControlCard extends LitElement {
         font-size: 12.5px;
         line-height: 16px;
         color: var(--lc-text-2);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
         font-variant-numeric: tabular-nums;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+        overflow: hidden;
       }
       .tune {
         width: 18px;
         height: 18px;
+        margin-left: auto;
         color: var(--lc-text-2);
         opacity: 0.55;
+        transition: opacity 0.2s ease;
+      }
+      .room-title:hover .tune {
+        opacity: 0.9;
       }
       .switch {
         position: relative;
@@ -794,9 +894,19 @@ export class LightControlCard extends LitElement {
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 8px;
       }
+      /* Rooms side by side show two tiles to a row, like a phone, and a lone tile fills its row. */
+      .side-by-side .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .side-by-side .grid > :only-child {
+        grid-column: 1 / -1;
+      }
       @container (max-width: 440px) {
         .grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .grid > :only-child {
+          grid-column: 1 / -1;
         }
         .rooms {
           padding: 10px 8px 0;

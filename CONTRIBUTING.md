@@ -42,6 +42,7 @@ src/
   controller.ts            service calls, optimistic updates and undo
   aggregate.ts             per-room counts, colors, brightness and power
   house-layout.ts          floors → stories, rooms → windows
+  room-columns.ts          rooms → balanced columns on wide cards
   color.ts, config.ts, localize.ts, graphics.ts, styles.ts
   components/              tile, house, controls sheet, brightness slider, color wheel
   translations/            one file per language

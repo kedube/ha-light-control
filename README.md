@@ -15,6 +15,7 @@ Every light and smart plug in your home, found automatically and grouped by room
 - **Your home at a glance.** An illustrated house where every room is a window glowing in the real color and brightness of its lights. Floors become stories, outdoor areas become lamp posts, and the sky follows the sun.
 - **Natural controls.** Tap a tile to switch it, slide across it to dim, and press and hold for a full sheet with a brightness slider, color wheel, white temperature and effects.
 - **Whole rooms at once.** Every room has its own switch, a room-wide brightness and color sheet, and its scenes one tap away.
+- **Fits any screen.** Two tiles to a row on a phone, rooms side by side in balanced columns on a wide dashboard, and the controls laid out beside the color wheel on short wall tablets.
 - **Smart plugs done right.** Live wattage, a 24-hour power chart, energy, voltage and current, on a faceplate drawn in your country's socket style. Room switches never cut power to plugs unless you ask them to.
 - **Undo.** "All off" and room switches remember each light's brightness and color, so one tap brings everything back.
 - **Instant feedback.** Tiles react immediately, even while slow Zigbee or cloud bulbs catch up.
@@ -28,6 +29,10 @@ Every light and smart plug in your home, found automatically and grouped by room
 |                                                              Daytime, light theme                                                              |                                                                     On a phone                                                                      |
 | :--------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------: |
 | ![The card in a light theme with a daytime sky](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/overview-light.png) | ![The card on a phone-sized screen with two columns of tiles](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/phone.png) |
+
+|                                                                               In a panel view                                                                               |
+| :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| ![The card filling a desktop panel view, with its rooms side by side in four columns](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/panel.png) |
 
 ## Installation
 
@@ -61,6 +66,8 @@ type: custom:light-control-card
 ```
 
 Every option is also available in the visual editor, grouped into Display, Plugs & outlets, Rooms, Entities and Behavior.
+
+The card works in any view and adapts to the space it gets. For a whole-house lighting dashboard, give it a **Panel** view or a wide section, and the rooms sit side by side in columns.
 
 ## Using the card
 

@@ -21,6 +21,15 @@ const shots = [
     clipHeight: 1080,
   },
   {
+    // A Panel view: the card alone, as wide as a desktop screen.
+    file: 'panel.png',
+    query: '&theme=dark&sky=night',
+    width: 1600,
+    panel: true,
+    scale: 1,
+    target: '#card-slot',
+  },
+  {
     file: 'house-dusk.png',
     query: '&theme=dark&sky=dusk',
     width: 1200,
@@ -81,6 +90,14 @@ for (const shot of shots) {
   await page.goto(`${server.url}/demo/index.html?e2e${shot.query}`);
   await page.waitForSelector('light-control-card lc-tile');
   if (shot.width && shot.width <= 440) await page.click('#width-phone');
+  if (shot.panel) {
+    await page.evaluate(() => {
+      const stage = document.getElementById('stage');
+      document.body.replaceChildren(stage);
+      stage.style.cssText = 'padding:24px;border:0;border-radius:0';
+      document.getElementById('card-slot').style.maxWidth = 'none';
+    });
+  }
   await page.evaluate(() => document.fonts.ready);
   if (shot.open) {
     await page

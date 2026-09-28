@@ -53,6 +53,11 @@ interface HistoryPoint {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Everything below the brightness and color stage; it moves beside the stage on short, wide screens. */
+function side(...parts: unknown[]) {
+  return html`<div class="side">${parts}</div>`;
+}
+
 /** Everything a light, plug or whole room can do, in one sheet. */
 export class LcSheet extends LitElement {
   static override properties = {
@@ -273,7 +278,7 @@ export class LcSheet extends LitElement {
       rgb,
       glow: on ? 0.3 + (brightness / 100) * 0.7 : 0,
       moreInfo: entity.entityId,
-      body: html`${stage} ${hasPicker ? this.renderPresets(view, ids) : nothing} ${this.renderEffects(entity, view)}`,
+      body: html`${stage}${side(hasPicker ? this.renderPresets(view, ids) : nothing, this.renderEffects(entity, view))}`,
     });
   }
 
@@ -439,27 +444,27 @@ export class LcSheet extends LitElement {
             ${outletArt(this.outletStyle, drawing)}
           </button>
         </div>
-        ${
+        ${side(
           watts !== null
             ? html`<div class="watts ${drawing ? 'live' : ''}">
                 <span class="value">${formatWatts(watts, language)}</span>
                 <span class="label">${t('power')}</span>
               </div>`
-            : nothing
-        }
-        ${this.renderSparkline()}
-        <div class="readings">
-          ${readings
-            .filter(([, id]) => id && this.hass.states[id])
-            .map(([label, id]) => {
-              const stateObj = this.hass.states[id!];
-              const value = Number.parseFloat(stateObj.state);
-              const text = Number.isFinite(value)
-                ? `${formatNumber(value, language, 2)} ${stateObj.attributes.unit_of_measurement ?? ''}`
-                : stateObj.state;
-              return html`<div class="reading"><span>${label}</span><strong>${text}</strong></div>`;
-            })}
-        </div>
+            : nothing,
+          this.renderSparkline(),
+          html`<div class="readings">
+            ${readings
+              .filter(([, id]) => id && this.hass.states[id])
+              .map(([label, id]) => {
+                const stateObj = this.hass.states[id!];
+                const value = Number.parseFloat(stateObj.state);
+                const text = Number.isFinite(value)
+                  ? `${formatNumber(value, language, 2)} ${stateObj.attributes.unit_of_measurement ?? ''}`
+                  : stateObj.state;
+                return html`<div class="reading"><span>${label}</span><strong>${text}</strong></div>`;
+              })}
+          </div>`,
+        )}
       `,
     });
   }
@@ -566,8 +571,8 @@ export class LcSheet extends LitElement {
               </div>`
             : nothing
         }
-        ${hasPicker ? this.renderPresets(pickerView, ids) : nothing}
-        ${
+        ${side(
+          hasPicker ? this.renderPresets(pickerView, ids) : nothing,
           room.scenes.length
             ? html`<div class="section-label">${t('scenes')}</div>
                 <div class="scenes">
@@ -578,9 +583,7 @@ export class LcSheet extends LitElement {
                       </button>`,
                   )}
                 </div>`
-            : nothing
-        }
-        ${
+            : nothing,
           ids.length
             ? html`<div class="room-actions">
                 <button class="pill-button" @click=${() => this.controller.setPower(ids, true)}>
@@ -590,8 +593,8 @@ export class LcSheet extends LitElement {
                   ${icon(mdiLightbulbOffOutline)}<span>${t('turn_off')}</span>
                 </button>
               </div>`
-            : nothing
-        }
+            : nothing,
+        )}
       `,
     });
   }
@@ -754,10 +757,14 @@ export class LcSheet extends LitElement {
       .round:hover {
         background: rgba(var(--lc-rgb-text), 0.14);
       }
-      .body {
+      .body,
+      .side {
         display: flex;
         flex-direction: column;
         gap: 18px;
+      }
+      .side:empty {
+        display: none;
       }
       .stage {
         display: flex;
@@ -842,15 +849,17 @@ export class LcSheet extends LitElement {
         color: var(--lc-text);
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
       }
+      /* One row on any phone: the swatches shrink a little rather than leave one on a line of its own. */
       .presets {
         display: flex;
         justify-content: center;
-        flex-wrap: wrap;
-        gap: 12px;
+        align-items: center;
+        column-gap: clamp(6px, 3%, 12px);
       }
       .swatch {
-        width: 36px;
-        height: 36px;
+        flex: 0 1 36px;
+        min-width: 0;
+        aspect-ratio: 1;
         border-radius: 50%;
         background: rgb(var(--s));
         box-shadow:
@@ -1057,6 +1066,52 @@ export class LcSheet extends LitElement {
         }
         lc-pill {
           width: 84px;
+        }
+      }
+      /* Short, wide screens (wall tablets and phones in landscape): controls beside the stage. */
+      @media (min-width: 720px) and (max-height: 700px) {
+        dialog {
+          width: min(780px, calc(100vw - 32px));
+        }
+        /* Nothing to set side by side: keep the usual width. */
+        dialog:has(.side:empty),
+        dialog:not(:has(.stage)) {
+          width: 460px;
+        }
+        .body {
+          flex-direction: row;
+          align-items: center;
+          gap: 28px;
+        }
+        .body > * {
+          flex: 1 1 0;
+          min-width: 0;
+        }
+      }
+      @media (min-width: 720px) and (max-height: 440px) {
+        header {
+          padding-bottom: 8px;
+        }
+        .side {
+          gap: 10px;
+        }
+        .spark svg {
+          height: 40px;
+        }
+        .stage,
+        .stage.solo:has(.big-toggle) {
+          min-height: 0;
+        }
+        lc-pill {
+          height: 150px;
+        }
+        lc-wheel {
+          width: min(100%, 170px);
+        }
+        .hero-bulb,
+        .big-toggle {
+          width: 120px;
+          height: 120px;
         }
       }
       @keyframes slide-up {
