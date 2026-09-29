@@ -23,6 +23,10 @@ export interface LightControlCardConfig {
   exclude?: string[];
   exclude_patterns?: string[];
   tap_action?: TapAction;
+  /**
+   * @deprecated Outlets now have their own switches for every room, floor and the whole home, so
+   * the lights switches never touch them. Still accepted, so existing dashboards keep loading.
+   */
   room_switch_outlets?: boolean;
   live_brightness?: boolean;
   unassigned_name?: string;

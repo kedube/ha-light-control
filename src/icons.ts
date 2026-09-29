@@ -2,8 +2,13 @@ import { html, type TemplateResult } from 'lit';
 
 export {
   mdiChartLine,
+  mdiChevronLeft,
+  mdiChevronRight,
   mdiClose,
   mdiCreation,
+  mdiHomeVariant,
+  mdiLightbulb,
+  mdiLightbulbGroup,
   mdiLightbulbOffOutline,
   mdiLightbulbOnOutline,
   mdiLightningBolt,
@@ -11,6 +16,8 @@ export {
   mdiPalette,
   mdiPlay,
   mdiPower,
+  mdiPowerPlug,
+  mdiPowerPlugOutline,
   mdiTuneVariant,
   mdiWhiteBalanceSunny,
   mdiWifiOff,

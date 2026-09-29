@@ -1,12 +1,9 @@
 import type { Translation } from './en.ts';
 
 export const pl: Translation = {
-  rooms: 'Pomieszczenia',
-  all_rooms: 'Wszystkie',
   on_now: 'Włączone',
   other: 'Inne',
   all_off: 'Wyłącz wszystko',
-  all_off_label: 'Wyłącz wszystkie światła',
   everything_off: 'Wszystko jest wyłączone',
   lights_on: {
     one: '{n} światło włączone',
@@ -72,6 +69,37 @@ export const pl: Translation = {
   purple: 'Fioletowy',
   pink: 'Różowy',
 
+  home: 'Dom',
+  inside: 'Wewnątrz',
+  outside: 'Na zewnątrz',
+  floors: 'Piętra',
+  lights: 'Światła',
+  outlets: 'Gniazdka',
+  lights_off: 'Światła wyłączone',
+  all_on: 'Włącz wszystko',
+  outlets_on: 'Włączone: {n} z {total}',
+  outlets_off_confirm: {
+    one: 'Dotknij ponownie, aby wyłączyć {n} gniazdko',
+    few: 'Dotknij ponownie, aby wyłączyć {n} gniazdka',
+    many: 'Dotknij ponownie, aby wyłączyć {n} gniazdek',
+    other: 'Dotknij ponownie, aby wyłączyć {n} gniazdka',
+  },
+  tap_to_confirm: 'Dotknij ponownie, aby potwierdzić',
+  turned_off_outlets: {
+    one: 'Wyłączono {n} gniazdko',
+    few: 'Wyłączono {n} gniazdka',
+    many: 'Wyłączono {n} gniazdek',
+    other: 'Wyłączono {n} gniazdka',
+  },
+  back: 'Wstecz',
+  rooms_count: {
+    one: '{n} pomieszczenie',
+    few: '{n} pomieszczenia',
+    many: '{n} pomieszczeń',
+    other: '{n} pomieszczenia',
+  },
+  floor_controls: 'Sterowanie piętrem',
+  home_controls: 'Cały dom',
   editor_intro:
     'Światła i gniazdka są wykrywane automatycznie i grupowane według obszarów Home Assistant. Nowe urządzenia pojawiają się same, a usunięte znikają. Sekcji poniżej używaj tylko do dopracowania.',
   section_display: 'Wygląd',
@@ -80,9 +108,9 @@ export const pl: Translation = {
   section_entities: 'Encje',
   section_behavior: 'Działanie',
   cfg_title: 'Tytuł',
-  cfg_show_house: 'Ilustracja domu',
-  cfg_show_summary: 'Podsumowanie i „Wyłącz wszystko”',
-  cfg_show_room_filter: 'Filtr pomieszczeń',
+  cfg_show_house: 'Dom 3D',
+  cfg_show_summary: 'Podsumowanie pod tytułem',
+  cfg_show_room_filter: 'Wybór piętra',
   cfg_show_scenes: 'Sceny pomieszczeń',
   cfg_icon_style: 'Ikony',
   opt_icon_auto: 'Grafiki karty, chyba że encja ma własną ikonę',
@@ -95,9 +123,6 @@ export const pl: Translation = {
   opt_outlet_all: 'Wszystkie przełączniki',
   help_outlet_detection:
     'Wskazówka: ustaw przełącznik w Home Assistant na „Pokaż jako: Gniazdko”, a zawsze będzie liczony jako gniazdko.',
-  cfg_room_switch_outlets: 'Przełączniki pomieszczeń i „Wyłącz wszystko” wyłączają też gniazdka',
-  help_room_switch_outlets:
-    'Domyślnie wyłączone, aby przełącznik pomieszczenia nigdy nie odciął zasilania lodówki ani komputera.',
   cfg_areas: 'Tylko te obszary (w tej kolejności)',
   help_areas: 'Zostaw puste, aby pokazać wszystkie obszary.',
   cfg_floors: 'Tylko te piętra',

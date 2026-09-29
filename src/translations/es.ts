@@ -1,12 +1,9 @@
 import type { Translation } from './en.ts';
 
 export const es: Translation = {
-  rooms: 'Habitaciones',
-  all_rooms: 'Todas',
   on_now: 'Encendidos',
   other: 'Otros',
   all_off: 'Apagar todo',
-  all_off_label: 'Apagar todas las luces',
   everything_off: 'Todo está apagado',
   lights_on: { one: '{n} luz encendida', other: '{n} luces encendidas' },
   plugs_on: { one: '{n} enchufe encendido', other: '{n} enchufes encendidos' },
@@ -57,6 +54,25 @@ export const es: Translation = {
   purple: 'Morado',
   pink: 'Rosa',
 
+  home: 'Casa',
+  inside: 'Interior',
+  outside: 'Exterior',
+  floors: 'Plantas',
+  lights: 'Luces',
+  outlets: 'Enchufes',
+  lights_off: 'Luces apagadas',
+  all_on: 'Encender todo',
+  outlets_on: { one: '{n} de {total} encendido', other: '{n} de {total} encendidos' },
+  outlets_off_confirm: {
+    one: 'Toca de nuevo para apagar {n} enchufe',
+    other: 'Toca de nuevo para apagar {n} enchufes',
+  },
+  tap_to_confirm: 'Toca de nuevo para confirmar',
+  turned_off_outlets: { one: 'Se apagó {n} enchufe', other: 'Se apagaron {n} enchufes' },
+  back: 'Atrás',
+  rooms_count: { one: '{n} habitación', other: '{n} habitaciones' },
+  floor_controls: 'Controles de la planta',
+  home_controls: 'Toda la casa',
   editor_intro:
     'Las luces y los enchufes se detectan automáticamente y se agrupan por sus áreas de Home Assistant. Los dispositivos nuevos aparecen solos y los eliminados desaparecen. Usa las secciones de abajo solo para afinar.',
   section_display: 'Visualización',
@@ -65,9 +81,9 @@ export const es: Translation = {
   section_entities: 'Entidades',
   section_behavior: 'Comportamiento',
   cfg_title: 'Título',
-  cfg_show_house: 'Ilustración de la casa',
-  cfg_show_summary: 'Resumen y «Apagar todo»',
-  cfg_show_room_filter: 'Filtro de habitaciones',
+  cfg_show_house: 'Casa en 3D',
+  cfg_show_summary: 'Resumen bajo el título',
+  cfg_show_room_filter: 'Selector de planta',
   cfg_show_scenes: 'Escenas de cada habitación',
   cfg_icon_style: 'Iconos',
   opt_icon_auto: 'Ilustraciones de la tarjeta, salvo que la entidad tenga su propio icono',
@@ -80,9 +96,6 @@ export const es: Translation = {
   opt_outlet_all: 'Todos los interruptores',
   help_outlet_detection:
     'Consejo: en Home Assistant, configura un interruptor como «Mostrar como: Enchufe» y siempre contará como enchufe.',
-  cfg_room_switch_outlets: 'Los interruptores de habitación y «Apagar todo» también apagan los enchufes',
-  help_room_switch_outlets:
-    'Desactivado por defecto, para que un interruptor de habitación nunca corte la corriente a una nevera o un ordenador.',
   cfg_areas: 'Solo estas áreas (en este orden)',
   help_areas: 'Déjalo vacío para mostrar todas las áreas.',
   cfg_floors: 'Solo estas plantas',

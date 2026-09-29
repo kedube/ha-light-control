@@ -1,12 +1,9 @@
 import type { Translation } from './en.ts';
 
 export const nl: Translation = {
-  rooms: 'Ruimtes',
-  all_rooms: 'Alle',
   on_now: 'Nu aan',
   other: 'Overig',
   all_off: 'Alles uit',
-  all_off_label: 'Alle lampen uitzetten',
   everything_off: 'Alles is uit',
   lights_on: { one: '{n} lamp aan', other: '{n} lampen aan' },
   plugs_on: { one: '{n} stopcontact aan', other: '{n} stopcontacten aan' },
@@ -57,6 +54,25 @@ export const nl: Translation = {
   purple: 'Paars',
   pink: 'Roze',
 
+  home: 'Thuis',
+  inside: 'Binnen',
+  outside: 'Buiten',
+  floors: 'Verdiepingen',
+  lights: 'Lampen',
+  outlets: 'Stopcontacten',
+  lights_off: 'Lampen uit',
+  all_on: 'Alles aan',
+  outlets_on: '{n} van {total} aan',
+  outlets_off_confirm: {
+    one: 'Tik nogmaals om {n} stopcontact uit te zetten',
+    other: 'Tik nogmaals om {n} stopcontacten uit te zetten',
+  },
+  tap_to_confirm: 'Tik nogmaals om te bevestigen',
+  turned_off_outlets: { one: '{n} stopcontact uitgezet', other: '{n} stopcontacten uitgezet' },
+  back: 'Terug',
+  rooms_count: { one: '{n} ruimte', other: '{n} ruimtes' },
+  floor_controls: 'Verdiepingsbediening',
+  home_controls: 'Hele huis',
   editor_intro:
     'Lampen en stopcontacten worden automatisch gevonden en gegroepeerd per Home Assistant-ruimte. Nieuwe apparaten verschijnen vanzelf en verwijderde verdwijnen. Gebruik de onderdelen hieronder alleen om te verfijnen.',
   section_display: 'Weergave',
@@ -65,9 +81,9 @@ export const nl: Translation = {
   section_entities: 'Entiteiten',
   section_behavior: 'Gedrag',
   cfg_title: 'Titel',
-  cfg_show_house: 'Huisillustratie',
-  cfg_show_summary: 'Samenvatting en "Alles uit"',
-  cfg_show_room_filter: 'Ruimtefilter',
+  cfg_show_house: '3D-huis',
+  cfg_show_summary: 'Samenvatting onder de titel',
+  cfg_show_room_filter: 'Verdiepingskeuze',
   cfg_show_scenes: 'Scènes per ruimte',
   cfg_icon_style: 'Pictogrammen',
   opt_icon_auto: 'Kaartillustraties, tenzij de entiteit een eigen pictogram heeft',
@@ -80,9 +96,6 @@ export const nl: Translation = {
   opt_outlet_all: 'Alle schakelaars',
   help_outlet_detection:
     'Tip: stel een schakelaar in Home Assistant in op "Weergeven als: stopcontact", dan telt hij altijd mee.',
-  cfg_room_switch_outlets: 'Ruimteschakelaars en "Alles uit" zetten ook stopcontacten uit',
-  help_room_switch_outlets:
-    'Standaard uit, zodat een ruimteschakelaar nooit de stroom van een koelkast of computer afsluit.',
   cfg_areas: 'Alleen deze ruimtes (in deze volgorde)',
   help_areas: 'Laat leeg om alle ruimtes te tonen.',
   cfg_floors: 'Alleen deze verdiepingen',

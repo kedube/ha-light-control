@@ -1,6 +1,9 @@
 import { makeEntityMatcher, type ResolvedConfig } from './config.ts';
 import { computeDomain, isLightGroup, type EntityKind } from './entity-model.ts';
 import type { EntityRegistryDisplayEntry, HassEntity, HomeAssistant } from './ha-types.ts';
+import { isOutdoorName, roomIcon, roomType, type RoomType } from './room-types.ts';
+
+export { isOutdoorName, roomIcon } from './room-types.ts';
 
 export const UNASSIGNED = '__unassigned__';
 
@@ -30,6 +33,8 @@ export interface Room {
   id: string;
   name: string;
   icon: string;
+  /** What kind of room it is, for its size and furniture in the 3D house. */
+  type: RoomType;
   floorId: string | null;
   outdoor: boolean;
   entities: DiscoveredEntity[];
@@ -40,6 +45,7 @@ export interface Floor {
   id: string;
   name: string;
   level: number | null;
+  icon: string | null;
   rooms: string[];
 }
 
@@ -63,74 +69,6 @@ const PLUG_WORDS =
 /** Switches on plug devices that are settings, not the relay itself. */
 const PLUG_SETTING_WORDS =
   /child ?lock|\block\b|\bled\b|indicator|buzzer|beep|power[ -]?on|auto[ -]?off|restore|overload|protection|backlight|night ?light/i;
-
-// Whole words only, so "Finished Basement" isn't a shed and "Kindergarten" isn't a garden.
-const OUTDOOR_WORDS =
-  /(?:^|[^\p{L}])(?:garden|yard|front ?yard|backyard|lawn|patio|deck|terrace|porch|driveway|outdoors?|outside|exterior|front ?door|pool|shed|pergola|carport|gazebo|garten|vorgarten|hinterhof|terrasse|einfahrt|au(?:ß|ss)en(?:bereich)?|tuin|voortuin|achtertuin|oprit|buiten|jardin|extérieur|allée|jardín|terraza|porche|giardino|terrazzo|esterno|vialetto|ogród|ogrod|taras|podjazd|zewnątrz|jardim|terraço|quintal|varanda)(?:$|[^\p{L}])/iu;
-
-/** A room-type noun keeps a space indoors: "Pool Room", "Garden Room", "Gartenzimmer". */
-const INDOOR_WORDS =
-  /(?:^|[^\p{L}])(?:room|house|hall|sunroom|zimmer|raum|kamer|chambre|salle|sala|stanza|pokój|quarto)(?:$|[^\p{L}])/iu;
-
-// Room names → icons, matching English and the card's other languages. First match wins.
-const ROOM_ICONS: [RegExp, string][] = [
-  [/nursery|baby|kid|child|playroom|kinder|enfant|infantil|niños|cameretta|bambin|dziec|criança/i, 'mdi:teddy-bear'],
-  [/guest|gäste|gast|invités|invitados|ospiti|gości|hóspedes/i, 'mdi:bed-outline'],
-  [
-    /dining|dinner|esszimmer|eetkamer|salle à manger|comedor|sala da pranzo|jadalnia|sala de jantar/i,
-    'mdi:silverware-fork-knife',
-  ],
-  [
-    /living|lounge|family|sitting|wohn|woonkamer|séjour|salon|salón|sala de estar|soggiorno|salotto|pokój dzienny|sala/i,
-    'mdi:sofa',
-  ],
-  [/kitchen|küche|keuken|cuisine|cocina|cucina|kuchnia|cozinha/i, 'mdi:stove'],
-  [
-    /bed|sleep|master|schlaf|slaapkamer|chambre|dormitorio|habitación|camera da letto|camera|sypialnia|quarto/i,
-    'mdi:bed',
-  ],
-  [
-    /bath|shower|toilet|\bwc\b|restroom|powder|lavatory|\bbad\b|badezimmer|badkamer|salle de bain|salle d'eau|baño|aseo|bagno|łazienka|lazienka|banheiro|casa de banho/i,
-    'mdi:shower',
-  ],
-  [
-    /office|study|\bden\b|work|büro|arbeitszimmer|kantoor|werkkamer|bureau|oficina|despacho|ufficio|studio|biuro|gabinet|escritório/i,
-    'mdi:desk',
-  ],
-  [/laundry|utility|wasch|washok|wasruimte|buanderie|lavadero|lavanderia|pralnia/i, 'mdi:washing-machine'],
-  [/garage|carport|garaje|garagem|garaż/i, 'mdi:garage'],
-  [/basement|cellar|keller|kelder|sous-sol|cave|sótano|cantina|seminterrato|piwnica|porão|cave/i, 'mdi:stairs-down'],
-  [/attic|loft|dachboden|zolder|grenier|ático|buhardilla|soffitta|mansarda|strych|sótão/i, 'mdi:home-roof'],
-  [/stair|landing|treppe|trap|escalier|escalera|scala|schody|escada/i, 'mdi:stairs'],
-  [
-    /hall|corridor|entry|foyer|vestibule|mudroom|flur|diele|gang|\bhal\b|couloir|entrée|pasillo|recibidor|corridoio|ingresso|korytarz|przedpokój|corredor|entrada/i,
-    'mdi:door',
-  ],
-  [/gym|fitness|workout|sport|siłownia|academia|palestra/i, 'mdi:dumbbell'],
-  [/media|theat|cinema|kino|\btv\b|game|spiel/i, 'mdi:television'],
-  [/closet|wardrobe|dressing|ankleide|kleedkamer|vestidor|cabina armadio|garderob|closet/i, 'mdi:hanger'],
-  [/pantry|storage|store|vorrat|abstell|berging|cellier|despensa|dispensa|spiżarnia|despensa/i, 'mdi:package-variant'],
-  [
-    /porch|patio|deck|terrace|balcon|balkon|terras|terrasse|terraza|terrazzo|taras|varanda|veranda/i,
-    'mdi:outdoor-lamp',
-  ],
-  [
-    /garden|yard|lawn|backyard|outdoor|outside|exterior|garten|tuin|jardin|jardín|giardino|ogród|ogrod|jardim|quintal/i,
-    'mdi:tree',
-  ],
-  [/driveway|path|einfahrt|oprit|allée|entrada de coches|vialetto|podjazd/i, 'mdi:road-variant'],
-  [/pool|piscine|piscina|zwembad|basen/i, 'mdi:pool'],
-];
-
-export function roomIcon(name: string, icon?: string | null): string {
-  if (icon) return icon;
-  for (const [re, mdi] of ROOM_ICONS) if (re.test(name)) return mdi;
-  return 'mdi:texture-box';
-}
-
-export function isOutdoorName(name: string): boolean {
-  return OUTDOOR_WORDS.test(name) && !INDOOR_WORDS.test(name);
-}
 
 /**
  * Removes a leading room name: "Living Room Floor Lamp" in "Living Room" → "Floor Lamp".
@@ -348,6 +286,7 @@ export function discover(hass: HomeAssistant, config: ResolvedConfig): Discovery
         id,
         name: config.unassigned_name || 'Other',
         icon: 'mdi:home-lightbulb-outline',
+        type: 'room',
         floorId: null,
         outdoor: false,
         entities,
@@ -357,12 +296,14 @@ export function discover(hass: HomeAssistant, config: ResolvedConfig): Discovery
     }
     const area = areas[id];
     const floor = area.floor_id ? floors[area.floor_id] : undefined;
+    const outdoor = isOutdoorName(area.name) || (floor ? isOutdoorName(floor.name) : false);
     rooms.push({
       id,
       name: area.name,
       icon: roomIcon(area.name, area.icon),
+      type: roomType(area.name, area.icon, outdoor),
       floorId: floor ? floor.floor_id : null,
-      outdoor: isOutdoorName(area.name) || (floor ? isOutdoorName(floor.name) : false),
+      outdoor,
       entities,
       scenes: (roomScenes.get(id) ?? []).sort((a, b) =>
         collator.compare(hass.states[a]?.attributes.friendly_name ?? a, hass.states[b]?.attributes.friendly_name ?? b),
@@ -374,7 +315,13 @@ export function discover(hass: HomeAssistant, config: ResolvedConfig): Discovery
   for (const floor of Object.values(floors)) {
     const floorRooms = rooms.filter((r) => r.floorId === floor.floor_id).map((r) => r.id);
     if (floorRooms.length) {
-      floorList.push({ id: floor.floor_id, name: floor.name, level: floor.level ?? null, rooms: floorRooms });
+      floorList.push({
+        id: floor.floor_id,
+        name: floor.name,
+        level: floor.level ?? null,
+        icon: floor.icon ?? null,
+        rooms: floorRooms,
+      });
     }
   }
 

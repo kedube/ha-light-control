@@ -1,137 +1,144 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues } from 'lit';
-import { clamp, mixRgb, type RGB } from '../color.ts';
+import { keyed } from 'lit/directives/keyed.js';
+import { repeat } from 'lit/directives/repeat.js';
+import { rgbTriplet, type RGB } from '../color.ts';
 import {
-  DOOR_H,
-  DOOR_W,
-  OVERHANG,
-  layoutHouse,
-  skyMode,
-  type HouseFloor,
-  type HouseLayout,
-  type HouseRoom,
-  type SkyMode,
-  type Slot,
-  type Lamp,
-  type SunInfo,
-} from '../house-layout.ts';
+  ISO_X,
+  ISO_Y,
+  leftFace,
+  polyline,
+  rightFace,
+  screenBounds,
+  topFace,
+  type Box,
+  type ScreenBounds,
+} from '../house/iso.ts';
+import { environment, type Environment } from '../house/palette.ts';
+import { planHouse, GROUND_ID, type HousePlan } from '../house/plan.ts';
+import { buildScene, roofSlope, type FixtureInput, type Scene, type SceneView } from '../house/scene.ts';
+import { skyMode, sunFromLeft, type SunInfo } from '../house/sky.ts';
 import { t } from '../localize.ts';
+import type { RoomType } from '../room-types.ts';
 import { fireEvent } from '../utils.ts';
 
-export { skyMode, type HouseRoom, type SunInfo } from '../house-layout.ts';
+export { skyMode, type SunInfo } from '../house/sky.ts';
+export { GROUND_ID } from '../house/plan.ts';
 
-interface Palette {
-  sky: [string, string];
-  wall: string;
-  trim: string;
-  roof: string;
-  roofEdge: string;
-  grass: string;
-  earth: string;
-  glass: string;
-  door: string;
-  bush: string;
-  lampPost: string;
-  foundation: string;
+export interface HouseRoom {
+  id: string;
+  name: string;
+  icon: string;
+  type: RoomType;
+  floorId: string | null;
+  outdoor: boolean;
+  lights: FixtureInput[];
+  /** "2 of 3 on · 60%", for tooltips and screen readers. */
+  caption: string;
+  /** Color of the room's lit lights; null when it is dark. */
+  rgb: RGB | null;
 }
 
-const PALETTES: Record<SkyMode, Palette> = {
-  night: {
-    sky: ['#0a1026', '#1d2c4d'],
-    wall: '#2a3245',
-    trim: '#3b465d',
-    roof: '#161b27',
-    roofEdge: '#252d3e',
-    grass: '#12241a',
-    earth: '#15110f',
-    glass: '#121a2a',
-    door: '#3a2b25',
-    bush: '#0f2a1c',
-    lampPost: '#3c4760',
-    foundation: '#232a38',
-  },
-  dusk: {
-    sky: ['#2a2358', '#e98a67'],
-    wall: '#6a5870',
-    trim: '#87738d',
-    roof: '#382840',
-    roofEdge: '#4c3a54',
-    grass: '#34502f',
-    earth: '#2a211c',
-    glass: '#2e2d4b',
-    door: '#5a3c30',
-    bush: '#284628',
-    lampPost: '#4b3f55',
-    foundation: '#4a3d50',
-  },
-  day: {
-    sky: ['#58a8f2', '#d2e9ff'],
-    wall: '#f0e5d2',
-    trim: '#fffaf1',
-    roof: '#b5543b',
-    roofEdge: '#8e3e2b',
-    grass: '#79bd5b',
-    earth: '#8a6b52',
-    glass: '#a9c9e7',
-    door: '#8b5a3c',
-    bush: '#4c9844',
-    lampPost: '#5b6577',
-    foundation: '#b9ab96',
-  },
-};
+export interface HouseFloor {
+  id: string;
+  level: number | null;
+}
 
-/** Deterministic star field so the sky doesn't reshuffle on every render. */
+export type HouseView = { kind: 'home' } | { kind: 'outside' } | { kind: 'floor'; floorId: string };
+
+interface Camera {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface Label {
+  room: HouseRoom;
+  x: number;
+  y: number;
+}
+
+const DURATION = 620;
+const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
+
+/** Deterministic star field, so the sky doesn't reshuffle on every render. */
 const STARS = (() => {
-  let seed = 7;
+  let seed = 11;
   const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-  return Array.from({ length: 30 }, () => ({ x: rand(), y: rand() * 0.8, r: 0.5 + rand() * 0.9, d: rand() * 4 }));
+  return Array.from({ length: 46 }, () => ({ x: rand(), y: rand() * 0.72, r: 0.5 + rand() * 1.1, d: rand() * 5 }));
 })();
 
-const css3 = (rgb: RGB) => `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
-
 /**
- * The home at a glance: each room is a window lit in the color and brightness of its lights,
- * outdoor areas are lamp posts, and the sky follows the sun. Tap a window to focus that room.
+ * The home in 3D. Outside, every room is a window lit in the color and brightness of its lights;
+ * a floor opens up like a dollhouse, with furniture and a pool of light under every lamp.
  */
 export class LcHouse extends LitElement {
   static override properties = {
     rooms: { attribute: false },
     floors: { attribute: false },
+    view: { attribute: false },
     selected: { attribute: false },
     sun: { attribute: false },
     topInset: { type: Number },
+    titleWidth: { type: Number },
+    bottomInset: { type: Number },
     dark: { type: Boolean, reflect: true },
     _size: { state: true },
     _hover: { state: true },
+    _camera: { state: true },
+    _ghost: { state: true },
   };
 
   declare rooms: HouseRoom[];
   declare floors: HouseFloor[];
+  declare view: HouseView;
   declare selected: string | null;
   declare sun?: SunInfo;
-  /** Pixels at the top kept clear of the house for the card's title overlay. */
+  /** Pixels at the top kept clear for the card's title. */
   declare topInset: number;
+  /** Width of the title in the top left; the house only moves down when it would run into it. */
+  declare titleWidth: number;
+  /** Pixels at the bottom kept clear for the floor switcher. */
+  declare bottomInset: number;
   declare dark: boolean;
   declare _size: { w: number; h: number };
   declare _hover: string | null;
+  declare _camera?: Camera;
+  /** The previous view, fading out while the new one fades in. */
+  declare _ghost: { scene: Scene } | null;
 
   private resizeObserver?: ResizeObserver;
+  private planKey = '';
+  private plan?: HousePlan;
+  private sceneKey = '';
+  private scene?: Scene;
+  private viewKey = '';
+  private viewSerial = 0;
+  private tween?: { from: Camera; to: Camera; start: number };
+  private frame = 0;
+  private ghostTimer?: ReturnType<typeof setTimeout>;
+  private target?: Camera;
 
   constructor() {
     super();
     this.rooms = [];
     this.floors = [];
+    this.view = { kind: 'home' };
     this.selected = null;
     this.topInset = 0;
+    this.titleWidth = 0;
+    this.bottomInset = 0;
     this.dark = false;
-    this._size = { w: 400, h: 190 };
+    this._size = { w: 0, h: 0 };
     this._hover = null;
+    this._ghost = null;
   }
 
   override connectedCallback(): void {
     super.connectedCallback();
     this.resizeObserver ??= new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
-      if (width && height && (Math.abs(width - this._size.w) > 1 || Math.abs(height - this._size.h) > 1)) {
+      if (width && height && (Math.abs(width - this._size.w) > 0.5 || Math.abs(height - this._size.h) > 0.5)) {
         this._size = { w: width, h: height };
       }
     });
@@ -141,254 +148,406 @@ export class LcHouse extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.resizeObserver?.disconnect();
+    cancelAnimationFrame(this.frame);
+    clearTimeout(this.ghostTimer);
+    // Home Assistant detaches cards when views switch; finish any move now rather than freeze mid-way.
+    if (this.tween) {
+      this._camera = this.tween.to;
+      this.tween = undefined;
+    }
+    this._ghost = null;
   }
 
-  protected override shouldUpdate(changed: PropertyValues<this>): boolean {
-    // The card rebuilds these arrays on every Home Assistant update; compare by content.
-    for (const [key, previous] of changed as Map<PropertyKey, unknown>) {
-      if ((key === 'rooms' || key === 'floors' || key === 'sun') && previous) {
-        const current = key === 'rooms' ? this.rooms : key === 'floors' ? this.floors : this.sun;
-        if (JSON.stringify(previous) !== JSON.stringify(current)) return true;
-        continue;
-      }
-      return true;
-    }
-    return false;
+  private get reducedMotion(): boolean {
+    return typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
+
+  // ─── Model ─────────────────────────────────────────────────────────────────
+
+  private planFor(): HousePlan {
+    const indoor = this.rooms.filter((r) => !r.outdoor);
+    const floorIds = new Set(this.floors.map((f) => f.id));
+    const key = JSON.stringify([this.floors.map((f) => [f.id, f.level]), indoor.map((r) => [r.id, r.type, r.floorId])]);
+    if (key !== this.planKey || !this.plan) {
+      const input = (list: HouseRoom[]) => list.map((r) => ({ id: r.id, type: r.type }));
+      this.plan = planHouse(
+        this.floors.map((f) => ({ id: f.id, level: f.level, rooms: input(indoor.filter((r) => r.floorId === f.id)) })),
+        input(indoor.filter((r) => !r.floorId || !floorIds.has(r.floorId))),
+      );
+      this.planKey = key;
+    }
+    return this.plan;
+  }
+
+  private sceneView(plan: HousePlan): SceneView {
+    const view = this.view;
+    if (view.kind === 'floor') {
+      const ids = new Set(this.rooms.filter((r) => r.floorId === view.floorId).map((r) => r.id));
+      let story = plan.stories.findIndex((s) => s.id === view.floorId || s.cells.some((c) => c.id && ids.has(c.id)));
+      if (story < 0 && view.floorId === GROUND_ID) story = plan.stories.findIndex((s) => s.ground);
+      if (story >= 0) return { kind: 'cutaway', story };
+    }
+    return { kind: 'exterior', focus: view.kind === 'outside' ? 'outside' : 'house' };
+  }
+
+  private environment(): Environment {
+    return environment(skyMode(this.sun), sunFromLeft(this.sun));
+  }
+
+  private sceneFor(plan: HousePlan, view: SceneView, env: Environment, prefix: string): Scene {
+    const key = JSON.stringify([
+      this.planKey,
+      view,
+      env.mode,
+      env.left > env.right,
+      prefix,
+      this.rooms.map((r) => [r.id, r.lights.map((l) => [l.on, l.level, l.rgb, l.name])]),
+    ]);
+    if (key !== this.sceneKey || !this.scene) {
+      const rooms = new Map(
+        this.rooms.filter((r) => !r.outdoor).map((r) => [r.id, { id: r.id, type: r.type, lights: r.lights }]),
+      );
+      const outdoor = this.rooms.filter((r) => r.outdoor).map((r) => ({ id: r.id, type: r.type, lights: r.lights }));
+      this.scene = buildScene({ plan, rooms, outdoor, env, view, prefix });
+      this.sceneKey = key;
+    }
+    return this.scene;
+  }
+
+  // ─── Camera ────────────────────────────────────────────────────────────────
+
+  private fit(bounds: ScreenBounds): Camera {
+    const { w, h } = this._size;
+    const padX = Math.max(12, w * 0.03);
+    const bottom = this.bottomInset + 10;
+    const bw = Math.max(1, bounds.right - bounds.left);
+    const bh = Math.max(1, bounds.bottom - bounds.top);
+    const place = (top: number): Camera & { scale: number } => {
+      const scale = Math.max(0.01, Math.min((w - 2 * padX) / bw, (h - top - bottom) / bh));
+      const cw = w / scale;
+      const ch = h / scale;
+      return {
+        x: bounds.left - (cw - bw) / 2,
+        y: bounds.top - top / scale - ((h - top - bottom) / scale - bh) / 2,
+        w: cw,
+        h: ch,
+        scale,
+      };
+    };
+    // Use the full height unless the house would then run into the title in the top left.
+    const tight = place(10);
+    const left = ((bounds.left - tight.x) / tight.w) * w;
+    const top = ((bounds.top - tight.y) / tight.h) * h;
+    const clash = this.topInset > 10 && left < this.titleWidth + 12 && top < this.topInset;
+    const { scale: _scale, ...camera } = clash ? place(this.topInset + 8) : tight;
+    return camera;
+  }
+
+  private moveCamera(to: Camera, animate: boolean): void {
+    this.target = to;
+    const from = this._camera;
+    if (!animate || !from || this.reducedMotion) {
+      cancelAnimationFrame(this.frame);
+      this.tween = undefined;
+      this._camera = to;
+      return;
+    }
+    this.tween = { from, to, start: performance.now() };
+    cancelAnimationFrame(this.frame);
+    const step = (now: number) => {
+      const tw = this.tween;
+      if (!tw) return;
+      const p = Math.min(1, (now - tw.start) / DURATION);
+      const k = ease(p);
+      this._camera = {
+        x: tw.from.x + (tw.to.x - tw.from.x) * k,
+        y: tw.from.y + (tw.to.y - tw.from.y) * k,
+        w: tw.from.w + (tw.to.w - tw.from.w) * k,
+        h: tw.from.h + (tw.to.h - tw.from.h) * k,
+      };
+      if (p < 1) this.frame = requestAnimationFrame(step);
+      else this.tween = undefined;
+    };
+    this.frame = requestAnimationFrame(step);
+  }
+
+  protected override willUpdate(changed: PropertyValues<this>): void {
+    if (!this._size.w || !this.rooms.length) return;
+    const plan = this.planFor();
+    const view = this.sceneView(plan);
+    const viewKey = JSON.stringify(view);
+    const env = this.environment();
+    const viewChanged = viewKey !== this.viewKey;
+    if (viewChanged) {
+      // Keep the old view on screen while the new one fades in.
+      if (this.scene && this.viewKey && !this.reducedMotion) {
+        this._ghost = { scene: this.scene };
+        clearTimeout(this.ghostTimer);
+        this.ghostTimer = setTimeout(() => (this._ghost = null), DURATION);
+      }
+      this.viewSerial++;
+      this.viewKey = viewKey;
+    }
+    const scene = this.sceneFor(plan, view, env, `v${this.viewSerial}-`);
+    const target = this.fit(scene.bounds);
+    const moved =
+      !this.target ||
+      Math.abs(target.x - this.target.x) > 0.01 ||
+      Math.abs(target.y - this.target.y) > 0.01 ||
+      Math.abs(target.w - this.target.w) > 0.01;
+    if (moved) this.moveCamera(target, viewChanged && !changed.has('_size'));
+    if (changed.has('_size') && this.tween) this.tween.to = target;
+  }
+
+  // ─── Rendering ─────────────────────────────────────────────────────────────
 
   protected override render() {
-    const layout = layoutHouse(this.rooms, this.floors);
-    const mode = skyMode(this.sun);
-    const p = PALETTES[mode];
-    const { w, h } = this._size;
-    const aspect = w / h;
-    const contentW = layout.bounds.right - layout.bounds.left;
-    const contentH = layout.bounds.bottom - layout.bounds.top;
-    // Fit the house below the title overlay, with a little ground showing underneath.
-    const bottomPx = 8;
-    const usable = Math.max(0.35, (h - this.topInset - bottomPx) / h);
-    const vbH = Math.max(contentH / usable, contentW / 0.9 / aspect);
-    const vbW = vbH * aspect;
-    const vbX = (layout.bounds.left + layout.bounds.right) / 2 - vbW / 2;
-    const vbY = layout.bounds.bottom + (bottomPx / h) * vbH - vbH;
-    const focus = this._hover ?? this.selected;
-    const focusSlot =
-      layout.windows.find((s) => s.room.id === focus) ??
-      (() => {
-        const lamp = layout.lamps.find((l) => l.room.id === focus);
-        return lamp ? { room: lamp.room, x: lamp.x - 6, y: -58, w: 12, h: 10, basement: false } : undefined;
-      })();
-
-    return html`
+    const camera = this._camera;
+    const scene = this.scene;
+    const env = this.environment();
+    const sky = html`<div
+      class="sky"
+      style="background:linear-gradient(${env.sky[0]}, ${env.sky[1]} 78%, ${env.horizon})"
+    >
+      ${this.renderCelestial(env)}
+    </div>`;
+    if (!camera || !scene || !this.plan) return html`<div class="stage sky-${env.mode}">${sky}</div>`;
+    const prefix = `v${this.viewSerial}-`;
+    const view = this.view;
+    const interactive = !this.tween;
+    return html`<div class="stage sky-${env.mode} ${this.tween ? 'moving' : ''}">
+      ${sky}
       <svg
-        viewBox="${vbX} ${vbY} ${vbW} ${vbH}"
+        class="scene"
+        viewBox="${camera.x} ${camera.y} ${camera.w} ${camera.h}"
         preserveAspectRatio="xMidYMid meet"
-        class="sky-${mode}"
         role="group"
         aria-label=${t('house_overview')}
       >
-        <defs>
-          <linearGradient id="lc-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color=${p.sky[0]}></stop>
-            <stop offset="1" stop-color=${p.sky[1]}></stop>
-          </linearGradient>
-          <filter id="lc-blur" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="7"></feGaussianBlur>
-          </filter>
-          <filter id="lc-soft" x="-100%" y="-100%" width="300%" height="300%">
-            <feGaussianBlur stdDeviation="3"></feGaussianBlur>
-          </filter>
-          <pattern id="lc-siding" width="10" height="7" patternUnits="userSpaceOnUse">
-            <path d="M0 6.5H10" stroke="rgba(0,0,0,0.07)" stroke-width="1"></path>
-          </pattern>
-          <mask id="lc-moon">
-            <rect x="-50" y="-50" width="100" height="100" fill="white"></rect>
-            <circle cx="5" cy="-4" r="10" fill="black"></circle>
-          </mask>
-          ${layout.windows.map(
-            (s, i) => svg`<radialGradient id="lc-win-${i}" cx="50%" cy="60%" r="75%">
-              <stop offset="0" stop-color=${css3(mixRgb(s.room.rgb ?? [255, 200, 120], [255, 255, 255], 0.55))}></stop>
-              <stop offset="1" stop-color=${css3(s.room.rgb ?? [255, 200, 120])}></stop>
-            </radialGradient>`,
-          )}
-        </defs>
-        <rect x=${vbX} y=${vbY} width=${vbW} height=${-vbY + 1} fill="url(#lc-sky)"></rect>
-        ${this.renderCelestial(mode, layout, vbX, vbY, vbW, vbH)}
-        <rect x=${vbX} y="0" width=${vbW} height=${vbY + vbH} fill=${p.grass}></rect>
-        ${
-          layout.basementH
-            ? svg`<rect x=${vbX} y="6" width=${vbW} height=${vbY + vbH} fill=${p.earth}></rect>`
-            : nothing
-        }
-        ${this.renderHouse(layout, p)} ${layout.lamps.map((lamp) => this.renderLamp(lamp, p))}
+        <defs>${this.renderPatterns(env)} ${this.renderDefs(scene)}</defs>
+        ${this._ghost ? svg`<g class="ghost" aria-hidden="true"><defs>${this.renderDefs(this._ghost.scene)}</defs>${this.renderShapes(this._ghost.scene)}</g>` : nothing}
+        ${keyed(prefix, svg`<g class=${this._ghost ? 'world enter' : 'world'}>${this.renderShapes(scene)}</g>`)}
+        ${this.renderOutline(scene, env)}
+        <g class="hits">${this.renderHits(scene)}</g>
       </svg>
-      ${focusSlot ? this.renderTip(focusSlot, vbX, vbY, vbW, vbH) : nothing}
-    `;
+      ${interactive ? this.renderLabels(scene, camera, view) : nothing}
+    </div>`;
   }
 
-  private renderCelestial(mode: SkyMode, layout: HouseLayout, x: number, y: number, w: number, h: number) {
-    const skyH = -y;
-    // Open sky: below the title overlay, beside the house. East is on the left, west on the right.
-    const top = y + (this.topInset / this._size.h) * h + 16;
-    const bottom = Math.min(layout.topY, -30);
-    const leftX = (x + layout.bounds.left) / 2;
-    const rightX = (x + w + layout.bounds.right) / 2;
-    const roomy = layout.bounds.left - x > 34;
-    if (mode === 'night') {
-      const moonX = roomy ? rightX : x + w * 0.5;
-      const moonY = roomy ? top + 8 : Math.max(top, layout.bounds.top - 26);
-      return svg`
-        <g class="stars">${STARS.map(
-          (s) => svg`<circle cx=${x + s.x * w} cy=${y + s.y * skyH} r=${s.r} style="animation-delay:${s.d}s"></circle>`,
-        )}</g>
-        <g transform="translate(${moonX} ${moonY})">
-          <circle r="18" fill="#f5f0da" opacity="0.28" filter="url(#lc-blur)"></circle>
-          <circle r="11" fill="#f5f0da" mask="url(#lc-moon)"></circle>
-        </g>`;
-    }
-    const azimuth = this.sun?.azimuth ?? 180;
-    const elevation = this.sun?.elevation ?? (mode === 'day' ? 40 : 2);
-    const sx = roomy ? (azimuth < 180 ? leftX : rightX) : x + w * clamp((azimuth - 60) / 240, 0.1, 0.9);
-    const sy = bottom - (bottom - top) * clamp((elevation + 4) / 60, 0, 1);
-    // Position on the outer group; the CSS drift animation owns the inner group's transform.
-    const cloud = (cx: number, cy: number, s: number, cls: string) => svg`
-      <g transform="translate(${cx} ${cy}) scale(${s})"><g class="cloud ${cls}">
-        <path d="M-22 6a9 9 0 0 1 6-15 12 12 0 0 1 22-3 10 10 0 0 1 16 10 7 7 0 0 1-2 14h-38a6 6 0 0 1-4-6z"></path>
-      </g></g>`;
-    return svg`
-      <g class="sun" transform="translate(${sx} ${sy})">
-        <circle r="30" opacity="0.12"></circle>
-        <circle r="20" opacity="0.22"></circle>
-        <circle r="12"></circle>
-      </g>
-      ${cloud(roomy ? leftX : x + w * 0.22, top + 14, 0.7, 'c1')}
-      ${cloud(x + w * 0.5 + layout.bodyW * 0.42, top + 4, 0.55, 'c2')}`;
-  }
-
-  private renderHouse(layout: HouseLayout, p: Palette) {
-    const { bodyW, topY, roofH } = layout;
-    const peakX = bodyW / 2;
-    const roofY = topY;
-    const chimneyX = bodyW * 0.72;
-    const slopeAt = (x: number) => roofY - roofH * (1 - Math.abs(x - peakX) / (peakX + OVERHANG));
-    return svg`
-      <g class="house">
-        <rect x=${chimneyX} y=${roofY - roofH * 0.82} width="13" height=${roofH * 0.82 - (roofY - slopeAt(chimneyX + 13)) + 2}
-          fill=${p.roofEdge}></rect>
-        <rect x=${chimneyX - 2} y=${roofY - roofH * 0.82 - 4} width="17" height="5" rx="1.5" fill=${p.roof}></rect>
-        ${
-          layout.basementH
-            ? svg`<rect x="0" y="0" width=${bodyW} height=${layout.basementH} fill=${p.foundation}></rect>`
-            : nothing
-        }
-        <rect x="0" y=${topY} width=${bodyW} height=${-topY} fill=${p.wall}></rect>
-        <rect x="0" y=${topY} width=${bodyW} height=${-topY} fill="url(#lc-siding)"></rect>
-        ${layout.bands.map((y) => svg`<rect x="0" y=${y - 2} width=${bodyW} height="4" fill=${p.trim} opacity="0.7"></rect>`)}
-        <path d="M${-OVERHANG} ${roofY + 3} L${peakX} ${roofY - roofH} L${bodyW + OVERHANG} ${roofY + 3} Z" fill=${p.roof}></path>
-        <path d="M${-OVERHANG} ${roofY + 3} L${peakX} ${roofY - roofH} L${bodyW + OVERHANG} ${roofY + 3}"
-          fill="none" stroke=${p.roofEdge} stroke-width="4" stroke-linejoin="round" stroke-linecap="round"></path>
-        ${layout.door ? this.renderDoor(layout.door.x, p) : nothing}
-        ${layout.windows.map((slot, i) => this.renderWindow(slot, i, p))}
-        ${this.renderBush(-OVERHANG + 2, p, false)}
-        ${this.renderBush(bodyW + OVERHANG - 2, p, true)}
-      </g>`;
-  }
-
-  private renderDoor(x: number, p: Palette) {
-    return svg`
-      <g class="door">
-        <rect x=${x - 3} y=${-DOOR_H - 3} width=${DOOR_W + 6} height=${DOOR_H + 3} rx="4" fill=${p.trim}></rect>
-        <path d="M${x} 0V${-DOOR_H + 9}a9 9 0 0 1 9-9h6a9 9 0 0 1 9 9V0z" fill=${p.door}></path>
-        <circle cx=${x + DOOR_W - 6} cy=${-DOOR_H / 2 + 2} r="1.6" fill="#e8c46a"></circle>
-        <rect x=${x - 6} y="-1" width=${DOOR_W + 12} height="3" rx="1.5" fill=${p.trim}></rect>
-      </g>`;
-  }
-
-  private renderBush(x: number, p: Palette, flip: boolean) {
-    const d = flip ? -1 : 1;
-    return svg`<g class="bush" fill=${p.bush}>
-      <circle cx=${x} cy="-6" r="9"></circle>
-      <circle cx=${x + 9 * d} cy="-4" r="7"></circle>
-      <circle cx=${x - 8 * d} cy="-3" r="6"></circle>
-    </g>`;
-  }
-
-  private renderWindow(slot: Slot, index: number, p: Palette) {
-    const { room, x, y, w, h } = slot;
-    const lit = room.onCount > 0 && room.rgb;
-    const selected = this.selected === room.id;
-    const glow = lit ? 0.35 + room.level * 0.55 : 0;
-    const curtain = slot.basement
-      ? nothing
-      : svg`
-      <path class="curtain" d="M0 0h7c-2 ${h * 0.45}-1 ${h * 0.8} 1 ${h}H0z"></path>
-      <path class="curtain" d="M${w} 0h-7c2 ${h * 0.45} 1 ${h * 0.8}-1 ${h}H${w}z"></path>`;
-    return svg`
-      <g transform="translate(${x} ${y})"><g
-        class="win ${lit ? 'lit' : ''} ${selected ? 'selected' : ''}"
-        role="button"
-        tabindex="0"
-        aria-label=${`${room.name}: ${room.caption}`}
-        aria-pressed=${selected ? 'true' : 'false'}
-        style="--glow:${glow.toFixed(2)}"
-        @click=${() => this.select(room.id)}
-        @keydown=${(ev: KeyboardEvent) => this.onKey(ev, room.id)}
-        @pointerenter=${(ev: PointerEvent) => ev.pointerType === 'mouse' && (this._hover = room.id)}
-        @pointerleave=${() => (this._hover = null)}
-      >
-        <rect class="halo" x="-12" y="-12" width=${w + 24} height=${h + 24} rx="12"
-          fill=${lit ? css3(room.rgb!) : 'transparent'} filter="url(#lc-blur)"></rect>
-        <rect class="ring" x="-6" y="-6" width=${w + 12} height=${h + 12} rx="7"></rect>
-        <rect x="-3" y="-3" width=${w + 6} height=${h + 6} rx="4" fill=${p.trim}></rect>
-        <rect width=${w} height=${h} rx="2" fill=${p.glass}></rect>
-        <rect class="light" width=${w} height=${h} rx="2" fill="url(#lc-win-${index})"
-          style="opacity:${lit ? (0.55 + room.level * 0.45).toFixed(2) : 0}"></rect>
-        ${curtain}
-        <path class="mullion" d="M${w / 2} 0V${h}M0 ${h * 0.46}H${w}" stroke=${p.trim}></path>
-        ${slot.basement ? nothing : svg`<rect x="-5" y=${h + 3} width=${w + 10} height="3.5" rx="1.5" fill=${p.trim}></rect>`}
-      </g></g>`;
-  }
-
-  private renderLamp(lamp: Lamp, p: Palette) {
-    const { room, x } = lamp;
-    const lit = room.onCount > 0 && room.rgb;
-    const color = lit ? css3(room.rgb!) : 'transparent';
-    const selected = this.selected === room.id;
-    return svg`
-      <g transform="translate(${x} 0)"><g
-        class="lamp ${lit ? 'lit' : ''} ${selected ? 'selected' : ''}"
-        role="button"
-        tabindex="0"
-        aria-label=${`${room.name}: ${room.caption}`}
-        aria-pressed=${selected ? 'true' : 'false'}
-        style="--glow:${lit ? (0.4 + room.level * 0.6).toFixed(2) : 0}"
-        @click=${() => this.select(room.id)}
-        @keydown=${(ev: KeyboardEvent) => this.onKey(ev, room.id)}
-        @pointerenter=${(ev: PointerEvent) => ev.pointerType === 'mouse' && (this._hover = room.id)}
-        @pointerleave=${() => (this._hover = null)}
-      >
-        <ellipse class="pool" cx="0" cy="1" rx="22" ry="4" fill=${color} filter="url(#lc-soft)"></ellipse>
-        <circle class="halo" cx="0" cy="-50" r="16" fill=${color} filter="url(#lc-blur)"></circle>
-        <rect class="hit" x="-12" y="-64" width="24" height="66" fill="transparent"></rect>
-        <circle class="ring" cx="0" cy="-50" r="11"></circle>
-        <rect x="-1.6" y="-44" width="3.2" height="44" rx="1.2" fill=${p.lampPost}></rect>
-        <rect x="-5" y="-2" width="10" height="3" rx="1" fill=${p.lampPost}></rect>
-        <path d="M-6 -44h12l-2-11h-8z" fill=${lit ? css3(mixRgb(room.rgb!, [255, 255, 255], 0.5)) : p.glass}
-          stroke=${p.lampPost} stroke-width="1.4"></path>
-        <path d="M-7.5 -55h15l-7.5-5z" fill=${p.lampPost}></path>
-      </g></g>`;
-  }
-
-  private renderTip(slot: Slot, vbX: number, vbY: number, vbW: number, vbH: number) {
+  private renderCelestial(env: Environment) {
     const { w, h } = this._size;
-    const left = ((slot.x + slot.w / 2 - vbX) / vbW) * w;
-    const top = ((slot.y - 8 - vbY) / vbH) * h;
-    const lit = slot.room.onCount > 0;
-    return html`<div
-      class="tip ${lit ? 'lit' : ''}"
-      style="left:${clamp(left, 60, w - 60)}px;top:${Math.max(18, top)}px"
-    >
-      <strong>${slot.room.name}</strong><span>${slot.room.caption}</span>
+    if (!w || !h) return nothing;
+    if (env.mode === 'night') {
+      return html`<svg class="stars" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+          ${STARS.map(
+            (s) =>
+              svg`<circle cx=${(s.x * w).toFixed(1)} cy=${(s.y * h).toFixed(1)} r=${s.r.toFixed(2)} style="animation-delay:${s.d.toFixed(2)}s"></circle>`,
+          )}
+        </svg>
+        <div class="moon"></div>`;
+    }
+    const left = env.left > env.right;
+    return html`<div class="sun ${left ? 'left' : 'right'} ${env.mode}"></div>`;
+  }
+
+  /** Textures, drawn in the plane of the surface they cover. */
+  private renderPatterns(env: Environment) {
+    const plan = this.plan!;
+    const slope = roofSlope(plan);
+    const holo = `rgb(${env.holo.join(',')})`;
+    const top = `matrix(${ISO_X} ${ISO_Y} ${-ISO_X} ${ISO_Y} 0 0)`;
+    return svg`
+      <pattern id="lc-grid" width="1" height="1" patternUnits="userSpaceOnUse" patternTransform=${top}>
+        <path d="M0 0H1M0 0V1" stroke=${holo} stroke-opacity=${env.mode === 'day' ? 0.16 : 0.2} stroke-width="0.03" fill="none"></path>
+      </pattern>
+      <pattern id="lc-siding-front" width="4" height="0.24" patternUnits="userSpaceOnUse" patternTransform="matrix(${ISO_X} ${ISO_Y} 0 -1 0 0)">
+        <path d="M0 0.01H4" stroke="#000" stroke-opacity="0.13" stroke-width="0.025"></path>
+      </pattern>
+      <pattern id="lc-siding-right" width="4" height="0.24" patternUnits="userSpaceOnUse" patternTransform="matrix(${-ISO_X} ${ISO_Y} 0 -1 0 0)">
+        <path d="M0 0.01H4" stroke="#000" stroke-opacity="0.13" stroke-width="0.025"></path>
+      </pattern>
+      <pattern id="lc-shingles-front" width="0.9" height="0.3" patternUnits="userSpaceOnUse" patternTransform="matrix(${ISO_X} ${ISO_Y} ${-ISO_X} ${ISO_Y + slope} 0 0)">
+        <path d="M0 0.01H0.9M0.2 0V0.15M0.65 0.15V0.3" stroke="#000" stroke-opacity="0.26" stroke-width="0.03" fill="none"></path>
+      </pattern>
+      <pattern id="lc-shingles-back" width="0.9" height="0.3" patternUnits="userSpaceOnUse" patternTransform="matrix(${ISO_X} ${ISO_Y} ${-ISO_X} ${ISO_Y - slope} 0 0)">
+        <path d="M0 0.01H0.9M0.2 0V0.15M0.65 0.15V0.3" stroke="#000" stroke-opacity="0.2" stroke-width="0.03" fill="none"></path>
+      </pattern>
+      <pattern id="lc-planks" width="1.4" height="0.36" patternUnits="userSpaceOnUse" patternTransform=${top}>
+        <path d="M0 0H1.4M0 0.18H1.4M0.35 0V0.18M1.05 0.18V0.36" stroke="#000" stroke-opacity="0.1" stroke-width="0.02" fill="none"></path>
+      </pattern>
+      <pattern id="lc-tiles" width="0.5" height="0.5" patternUnits="userSpaceOnUse" patternTransform=${top}>
+        <path d="M0 0H0.5M0 0V0.5" stroke="#000" stroke-opacity="0.1" stroke-width="0.02" fill="none"></path>
+      </pattern>
+      <linearGradient id="lc-glass" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color=${env.glassDay[0]}></stop>
+        <stop offset="1" stop-color=${env.glassDay[1]}></stop>
+      </linearGradient>
+      <linearGradient id="lc-sky-window" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color=${env.sky[0]}></stop>
+        <stop offset="1" stop-color=${env.sky[1]}></stop>
+      </linearGradient>
+      <radialGradient id="lc-hot" cx="50%" cy="45%" r="60%">
+        <stop offset="0" stop-color="#fff" stop-opacity="0.9"></stop>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"></stop>
+      </radialGradient>`;
+  }
+
+  private renderDefs(scene: Scene) {
+    return svg`${scene.gradients.map((g) => {
+      const color = `rgb(${g.rgb.map((v) => Math.round(v)).join(',')})`;
+      const stops = g.stops.map(
+        ([offset, opacity]) => svg`<stop offset=${offset} stop-color=${color} stop-opacity=${opacity}></stop>`,
+      );
+      return g.line
+        ? svg`<linearGradient id=${g.id} gradientUnits="userSpaceOnUse" x1=${g.line[0]} y1=${g.line[1]} x2=${g.line[2]} y2=${g.line[3]}>${stops}</linearGradient>`
+        : svg`<radialGradient id=${g.id}>${stops}</radialGradient>`;
+    })}
+    ${scene.clips.map((c) => svg`<clipPath id=${c.id}><path d=${c.d}></path></clipPath>`)}`;
+  }
+
+  private renderShapes(scene: Scene) {
+    return scene.shapes.map(
+      (s) => svg`<path
+        d=${s.d}
+        fill=${s.fill ?? 'none'}
+        opacity=${s.opacity ?? nothing}
+        stroke=${s.stroke ?? nothing}
+        stroke-width=${s.stroke ? (s.width ?? 1) : nothing}
+        class=${s.kind ?? nothing}
+        clip-path=${s.clip ? `url(#${s.clip})` : nothing}
+      ></path>`,
+    );
+  }
+
+  /**
+   * Keyed by room, so keyboard focus stays on the same room when the view changes around it. A room
+   * seen on two walls gets one tab stop.
+   */
+  private renderHits(scene: Scene) {
+    const count = new Map<string, number>();
+    const hits = scene.hits.map((hit) => {
+      const n = count.get(hit.roomId) ?? 0;
+      count.set(hit.roomId, n + 1);
+      return { ...hit, key: `${hit.roomId}#${n}`, primary: n === 0 };
+    });
+    return repeat(
+      hits,
+      (hit) => hit.key,
+      (hit) => this.renderHit(hit.roomId, hit.d, hit.primary),
+    );
+  }
+
+  private renderHit(roomId: string, d: string, primary: boolean) {
+    const room = this.rooms.find((r) => r.id === roomId);
+    if (!room) return nothing;
+    const selected = this.selected === roomId;
+    return svg`<path
+      class="hit"
+      d=${d}
+      role=${primary ? 'button' : nothing}
+      tabindex=${primary ? 0 : -1}
+      aria-hidden=${primary ? nothing : 'true'}
+      aria-label=${primary ? `${room.name}: ${room.caption}` : nothing}
+      aria-pressed=${primary ? (selected ? 'true' : 'false') : nothing}
+      @click=${() => this.select(roomId)}
+      @keydown=${(ev: KeyboardEvent) => this.onKey(ev, roomId)}
+      @focus=${() => (this._hover = roomId)}
+      @blur=${() => (this._hover = null)}
+      @pointerenter=${(ev: PointerEvent) => ev.pointerType === 'mouse' && (this._hover = roomId)}
+      @pointerleave=${() => (this._hover = null)}
+    ></path>`;
+  }
+
+  /** A glowing wireframe around the selected room, and a fainter one around the one under the mouse. */
+  private renderOutline(scene: Scene, env: Environment) {
+    const holo = `rgb(${env.holo.join(',')})`;
+    const frame = (b: Box, strong: boolean) => {
+      const top = topFace(b);
+      const edges =
+        polyline([...top, top[0]]) +
+        polyline([
+          [b.x1, b.y0, b.z1],
+          [b.x1, b.y0, b.z0],
+          [b.x1, b.y1, b.z0],
+          [b.x0, b.y1, b.z0],
+          [b.x0, b.y1, b.z1],
+        ]) +
+        polyline([
+          [b.x1, b.y1, b.z0],
+          [b.x1, b.y1, b.z1],
+        ]);
+      const faces = [topFace(b), leftFace(b), rightFace(b)];
+      return svg`<g class="outline ${strong ? 'strong' : ''}">
+        ${faces.map((f) => svg`<path d=${polyline([...f, f[0]])} fill=${holo} fill-opacity=${strong ? 0.07 : 0.04} stroke="none"></path>`)}
+        <path d=${edges} stroke=${holo} stroke-width=${strong ? 7 : 5} stroke-opacity="0.22" class="line"></path>
+        <path d=${edges} stroke=${holo} stroke-width=${strong ? 1.8 : 1.2} class="line"></path>
+      </g>`;
+    };
+    const out = [];
+    const hover = this._hover && this._hover !== this.selected ? scene.volumes.get(this._hover) : undefined;
+    if (hover) out.push(frame(hover, false));
+    const selected = this.selected ? scene.volumes.get(this.selected) : undefined;
+    if (selected) out.push(frame(selected, true));
+    return svg`<g class="outlines" aria-hidden="true">${out}</g>`;
+  }
+
+  private renderLabels(scene: Scene, camera: Camera, view: HouseView) {
+    const { w, h } = this._size;
+    const byId = new Map(this.rooms.map((r) => [r.id, r]));
+    const show = (roomId: string) => {
+      const room = byId.get(roomId);
+      if (!room) return false;
+      if (view.kind === 'floor') return true;
+      if (view.kind === 'outside') return room.outdoor || roomId === this._hover || roomId === this.selected;
+      return roomId === this._hover || roomId === this.selected;
+    };
+    const labels: Label[] = [];
+    const seen = new Set<string>();
+    for (const anchor of scene.anchors) {
+      if (seen.has(anchor.roomId) || !show(anchor.roomId)) continue;
+      seen.add(anchor.roomId);
+      labels.push({
+        room: byId.get(anchor.roomId)!,
+        x: ((anchor.x - camera.x) / camera.w) * w,
+        y: ((anchor.y - camera.y) / camera.h) * h,
+      });
+    }
+    // A busy floor shows each room's icon; its name appears on hover or when it is selected.
+    const crowded = labels.length > Math.max(5, Math.floor(w / 130));
+    const full = (roomId: string) => !crowded || roomId === this._hover || roomId === this.selected;
+    // Nudge labels apart so they never sit on top of each other.
+    labels.sort((a, b) => a.y - b.y);
+    const placed: { l: number; r: number; t: number; b: number }[] = [];
+    for (const label of labels) {
+      const half = full(label.room.id) ? Math.min(90, 26 + label.room.name.length * 3.6) : 20;
+      let y = label.y;
+      for (let tries = 0; tries < 8; tries++) {
+        const hit = placed.find((p) => label.x - half < p.r && label.x + half > p.l && y - 12 < p.b && y + 12 > p.t);
+        if (!hit) break;
+        y = hit.t - 13;
+      }
+      label.y = Math.max(this.topInset + 14, Math.min(h - this.bottomInset - 14, y));
+      label.x = Math.max(half + 4, Math.min(w - half - 4, label.x));
+      placed.push({ l: label.x - half, r: label.x + half, t: label.y - 12, b: label.y + 12 });
+    }
+    return html`<div class="labels">
+      ${labels.map(({ room, x, y }) => {
+        const lit = Boolean(room.rgb);
+        return html`<button
+          class="tag ${lit ? 'lit' : ''} ${this.selected === room.id ? 'selected' : ''} ${this._hover === room.id ? 'hover' : ''} ${full(room.id) ? '' : 'compact'}"
+          style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;${room.rgb ? `--c:${rgbTriplet(room.rgb)}` : ''}"
+          tabindex="-1"
+          aria-hidden="true"
+          @click=${() => this.select(room.id)}
+          @pointerenter=${(ev: PointerEvent) => ev.pointerType === 'mouse' && (this._hover = room.id)}
+          @pointerleave=${() => (this._hover = null)}
+        >
+          <ha-icon .icon=${room.icon}></ha-icon>
+          ${full(room.id) ? html`<span class="name">${room.name}</span>` : nothing}
+          ${view.kind === 'home' && (this._hover === room.id || this.selected === room.id) ? html`<span class="caption">${room.caption}</span>` : nothing}
+          <i class="dot"></i>
+        </button>`;
+      })}
     </div>`;
   }
 
@@ -403,6 +562,12 @@ export class LcHouse extends LitElement {
     }
   }
 
+  /** The screen box of a room in the current scene, for tests and the card. */
+  roomBounds(roomId: string): ScreenBounds | undefined {
+    const box = this.scene?.volumes.get(roomId);
+    return box ? screenBounds(box) : undefined;
+  }
+
   static override styles = css`
     :host {
       display: block;
@@ -410,133 +575,233 @@ export class LcHouse extends LitElement {
       width: 100%;
       height: 100%;
       overflow: hidden;
+      --lc-holo: 86, 204, 255;
     }
-    svg {
+    .stage,
+    .sky,
+    svg.scene,
+    .labels {
+      position: absolute;
+      inset: 0;
+    }
+    svg.scene {
+      width: 100%;
+      height: 100%;
       display: block;
+      overflow: visible;
+    }
+    .sky {
+      overflow: hidden;
+    }
+    .stars {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
     }
-    :host([dark]) svg.sky-day {
-      filter: brightness(0.86) saturate(0.92);
-    }
     .stars circle {
       fill: #fff;
-      animation: twinkle 4s ease-in-out infinite;
+      opacity: 0.7;
+      animation: twinkle 4.5s ease-in-out infinite;
     }
-    .sun circle {
-      fill: #ffd45e;
+    .moon {
+      position: absolute;
+      top: 18%;
+      right: 9%;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 38%, #fbf7e6 0 58%, #e9e2c6 100%);
+      box-shadow:
+        0 0 24px 6px rgba(245, 240, 218, 0.22),
+        0 0 80px 30px rgba(120, 160, 255, 0.08);
     }
-    .sky-dusk .sun circle {
-      fill: #ffb067;
+    .moon::after {
+      content: '';
+      position: absolute;
+      inset: -2px -2px -2px 9px;
+      border-radius: 50%;
+      background: inherit;
+      filter: brightness(0.2);
+      opacity: 0.18;
     }
-    .cloud path {
-      fill: #fff;
-      opacity: 0.85;
+    .sun {
+      position: absolute;
+      top: 12%;
+      width: 180px;
+      height: 180px;
+      margin: -90px;
+      border-radius: 50%;
+      background: radial-gradient(
+        circle,
+        rgba(255, 244, 214, 0.95) 0 9%,
+        rgba(255, 226, 160, 0.35) 18%,
+        rgba(255, 220, 150, 0) 62%
+      );
+      pointer-events: none;
     }
-    .sky-dusk .cloud path {
-      fill: #f6b9a3;
-      opacity: 0.5;
+    .sun.left {
+      left: 14%;
     }
-    .cloud.c1 {
-      animation: drift 38s ease-in-out infinite alternate;
+    .sun.right {
+      left: 86%;
     }
-    .cloud.c2 {
-      animation: drift 52s ease-in-out infinite alternate-reverse;
+    .sun.dusk {
+      top: 62%;
+      background: radial-gradient(
+        circle,
+        rgba(255, 214, 160, 0.95) 0 8%,
+        rgba(255, 150, 100, 0.4) 20%,
+        rgba(255, 140, 90, 0) 64%
+      );
     }
-    .win,
-    .lamp {
+    .glow {
+      mix-blend-mode: screen;
+    }
+    .line {
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+    .world path {
+      transition:
+        fill 0.6s ease,
+        opacity 0.6s ease;
+    }
+    .world.enter {
+      animation: enter ${DURATION}ms ease both;
+    }
+    .ghost {
+      animation: leave ${DURATION}ms ease both;
+      pointer-events: none;
+    }
+    .hit {
+      fill: transparent;
       cursor: pointer;
       outline: none;
-      transition: transform 0.25s ease;
-      transform-box: fill-box;
-      transform-origin: center;
     }
-    .win:hover {
-      transform: scale(1.08);
-    }
-    .halo {
-      opacity: var(--glow);
-      transition:
-        opacity 0.6s ease,
-        fill 0.6s ease;
-    }
-    .pool {
-      opacity: calc(var(--glow) * 0.8);
-      transition: opacity 0.6s ease;
-    }
-    .light {
-      transition: opacity 0.6s ease;
-    }
-    .curtain {
-      fill: rgba(0, 0, 0, 0.18);
-    }
-    .lit .curtain {
-      fill: rgba(0, 0, 0, 0.12);
-    }
-    .mullion {
-      stroke-width: 2.4;
-      fill: none;
-    }
-    .ring {
-      fill: none;
-      stroke: transparent;
-      stroke-width: 2.5;
-      transition: stroke 0.25s ease;
-    }
-    .selected .ring,
-    .win:focus-visible .ring,
-    .lamp:focus-visible .ring {
-      stroke: var(--primary-color, #03a9f4);
-    }
-    .sky-night .selected .ring {
-      stroke: #fff;
-    }
-    .tip {
-      position: absolute;
-      transform: translate(-50%, -100%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 5px 10px;
-      border-radius: 10px;
-      background: rgba(15, 18, 28, 0.82);
-      color: #fff;
-      font-size: 12px;
-      line-height: 15px;
-      white-space: nowrap;
+    .outline {
       pointer-events: none;
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+      animation: fade-in 0.25s ease both;
     }
-    .tip strong {
+    .outline.strong .line:last-child {
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+    .labels {
+      pointer-events: none;
+    }
+    .tag {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 180px;
+      height: 24px;
+      padding: 0 8px 0 6px;
+      border: 1px solid rgba(var(--lc-holo), 0.35);
+      border-radius: 12px;
+      background: rgba(8, 16, 32, 0.62);
+      color: #eaf6ff;
+      font: inherit;
+      font-size: 11.5px;
       font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+      cursor: pointer;
+      pointer-events: auto;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+      animation: fade-in 0.3s ease both;
+      transition:
+        border-color 0.2s ease,
+        background 0.2s ease;
+      --mdc-icon-size: 14px;
     }
-    .tip span {
+    .sky-day .tag {
+      background: rgba(255, 255, 255, 0.78);
+      color: #10233f;
+      border-color: rgba(40, 130, 230, 0.35);
+    }
+    .tag ha-icon {
+      display: inline-flex;
+      opacity: 0.85;
+    }
+    .tag.compact {
+      padding: 0 6px;
+      gap: 4px;
+    }
+    .tag .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tag .caption {
+      font-weight: 500;
       opacity: 0.75;
-      font-size: 11px;
+    }
+    .tag .dot {
+      width: 7px;
+      height: 7px;
+      flex: none;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.25);
+    }
+    .sky-day .tag .dot {
+      background: rgba(16, 35, 63, 0.2);
+    }
+    .tag.lit .dot {
+      background: rgb(var(--c));
+      box-shadow: 0 0 8px rgb(var(--c));
+    }
+    .tag.selected,
+    .tag.hover {
+      border-color: rgba(var(--lc-holo), 0.9);
+      background: rgba(10, 30, 56, 0.85);
+    }
+    .sky-day .tag.selected,
+    .sky-day .tag.hover {
+      background: #fff;
+      border-color: rgba(40, 130, 230, 0.9);
     }
     @keyframes twinkle {
       0%,
       100% {
-        opacity: 0.9;
+        opacity: 0.85;
       }
       50% {
-        opacity: 0.25;
+        opacity: 0.2;
       }
     }
-    @keyframes drift {
+    @keyframes enter {
       from {
-        transform: translateX(-18px);
+        opacity: 0;
       }
+    }
+    @keyframes leave {
       to {
-        transform: translateX(18px);
+        opacity: 0;
+        transform: translateY(-1.2px);
+      }
+    }
+    @keyframes fade-in {
+      from {
+        opacity: 0;
+      }
+    }
+    @keyframes pulse {
+      50% {
+        stroke-opacity: 0.55;
       }
     }
     @media (prefers-reduced-motion: reduce) {
       .stars circle,
-      .cloud {
-        animation: none !important;
+      .outline.strong .line:last-child {
+        animation: none;
+      }
+      .world path {
+        transition: none;
       }
     }
   `;

@@ -9,14 +9,16 @@ const SIDE_PADDING = 24;
 
 // Room and tile heights in pixels, mirroring the card's and lc-tile's styles. The estimates only
 // balance the columns, so a few pixels off (a caption on two lines) costs nothing.
-const ROOM_CHROME = 74; // top and bottom padding plus the header
-const SCENE_ROW = 40;
-const TILE_TALL = 100; // narrow tiles stack the icon above the name
-const TILE_WIDE = 64;
+const ROOM_CHROME = 64; // padding plus the header
+const GAP = 10;
+const SCENE_ROW = 28;
+const TILE = 64;
+/** lc-tile stacks its icon above the name below this width, and grows taller. */
+const STACK_BELOW = 190;
+const TILE_STACKED = 92;
 const TILE_GAP = 8;
+const CHIP = 44;
 const ROOM_PADDING_X = 20;
-/** lc-tile switches to the stacked layout below this width. */
-const STACK_BELOW = 180;
 
 /** How many room columns fit a card this wide; never more than there are rooms. */
 export function columnCount(cardWidth: number, rooms: number): number {
@@ -28,12 +30,25 @@ export function columnWidth(cardWidth: number, columns: number): number {
   return (cardWidth - SIDE_PADDING - COLUMN_GAP * (columns - 1)) / columns;
 }
 
-/** Height of a room in a column, where tiles sit two to a row and a lone tile fills its row. */
-export function estimateRoomHeight(tiles: number, scenes: boolean, width: number): number {
-  const rows = Math.ceil(tiles / 2);
-  const tileWidth = (width - ROOM_PADDING_X - TILE_GAP) / 2;
-  const tileHeight = tiles === 1 || tileWidth >= STACK_BELOW ? TILE_WIDE : TILE_TALL;
-  return ROOM_CHROME + (scenes ? SCENE_ROW : 0) + rows * tileHeight + Math.max(0, rows - 1) * TILE_GAP;
+/** Tiles per row in a room this wide, as lc-tile and the card's grid lay them out. */
+export function tilesPerRow(width: number): number {
+  const inner = width - ROOM_PADDING_X;
+  return width <= 440 ? 2 : Math.max(2, Math.floor((inner + TILE_GAP) / (150 + TILE_GAP)));
+}
+
+/** Height of a room: its lights in a grid, its outlets as chips, and its scenes. */
+export function estimateRoomHeight(lights: number, outlets: number, scenes: boolean, width: number): number {
+  const perRow = tilesPerRow(width);
+  const rows = lights === 1 ? 1 : Math.ceil(lights / perRow);
+  const chipsPerRow = Math.max(1, Math.floor((width - ROOM_PADDING_X + 6) / (150 + 6)));
+  const chipRows = Math.ceil(outlets / chipsPerRow);
+  const tileWidth = (width - ROOM_PADDING_X - TILE_GAP * (perRow - 1)) / perRow;
+  const tile = lights === 1 || tileWidth >= STACK_BELOW ? TILE : TILE_STACKED;
+  let height = ROOM_CHROME;
+  if (rows) height += GAP + rows * tile + (rows - 1) * TILE_GAP;
+  if (chipRows) height += GAP + chipRows * CHIP + (chipRows - 1) * 6;
+  if (scenes) height += GAP + SCENE_ROW;
+  return height;
 }
 
 /**

@@ -1,12 +1,9 @@
 import type { Translation } from './en.ts';
 
 export const fr: Translation = {
-  rooms: 'Pièces',
-  all_rooms: 'Toutes',
   on_now: 'Allumés',
   other: 'Autres',
   all_off: 'Tout éteindre',
-  all_off_label: 'Éteindre toutes les lumières',
   everything_off: 'Tout est éteint',
   lights_on: { one: '{n} lumière allumée', other: '{n} lumières allumées' },
   plugs_on: { one: '{n} prise allumée', other: '{n} prises allumées' },
@@ -57,6 +54,25 @@ export const fr: Translation = {
   purple: 'Violet',
   pink: 'Rose',
 
+  home: 'Maison',
+  inside: 'Intérieur',
+  outside: 'Extérieur',
+  floors: 'Étages',
+  lights: 'Lumières',
+  outlets: 'Prises',
+  lights_off: 'Lumières éteintes',
+  all_on: 'Tout allumer',
+  outlets_on: { one: '{n} sur {total} allumée', other: '{n} sur {total} allumées' },
+  outlets_off_confirm: {
+    one: 'Touchez à nouveau pour éteindre {n} prise',
+    other: 'Touchez à nouveau pour éteindre {n} prises',
+  },
+  tap_to_confirm: 'Touchez à nouveau pour confirmer',
+  turned_off_outlets: { one: '{n} prise éteinte', other: '{n} prises éteintes' },
+  back: 'Retour',
+  rooms_count: { one: '{n} pièce', other: '{n} pièces' },
+  floor_controls: "Commandes de l'étage",
+  home_controls: 'Toute la maison',
   editor_intro:
     'Les lumières et les prises sont détectées automatiquement et regroupées selon leurs pièces Home Assistant. Les nouveaux appareils apparaissent seuls et ceux supprimés disparaissent. Les sections ci-dessous servent seulement aux réglages fins.',
   section_display: 'Affichage',
@@ -65,9 +81,9 @@ export const fr: Translation = {
   section_entities: 'Entités',
   section_behavior: 'Comportement',
   cfg_title: 'Titre',
-  cfg_show_house: 'Illustration de la maison',
-  cfg_show_summary: 'Résumé et « Tout éteindre »',
-  cfg_show_room_filter: 'Filtre des pièces',
+  cfg_show_house: 'Maison en 3D',
+  cfg_show_summary: 'Résumé sous le titre',
+  cfg_show_room_filter: 'Sélecteur d’étage',
   cfg_show_scenes: 'Scènes des pièces',
   cfg_icon_style: 'Icônes',
   opt_icon_auto: "Illustrations de la carte, sauf si l'entité a sa propre icône",
@@ -80,9 +96,6 @@ export const fr: Translation = {
   opt_outlet_all: 'Tous les interrupteurs',
   help_outlet_detection:
     "Astuce : réglez un interrupteur sur « Afficher en tant que : Prise » dans Home Assistant pour qu'il compte toujours comme une prise.",
-  cfg_room_switch_outlets: 'Les interrupteurs de pièce et « Tout éteindre » coupent aussi les prises',
-  help_room_switch_outlets:
-    "Désactivé par défaut, pour qu'un interrupteur de pièce ne coupe jamais un réfrigérateur ou un ordinateur.",
   cfg_areas: 'Seulement ces pièces (dans cet ordre)',
   help_areas: 'Laissez vide pour afficher toutes les pièces.',
   cfg_floors: 'Seulement ces étages',

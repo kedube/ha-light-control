@@ -1,12 +1,9 @@
 import type { Translation } from './en.ts';
 
 export const it: Translation = {
-  rooms: 'Stanze',
-  all_rooms: 'Tutte',
   on_now: 'Accesi ora',
   other: 'Altro',
   all_off: 'Spegni tutto',
-  all_off_label: 'Spegni tutte le luci',
   everything_off: 'Tutto spento',
   lights_on: { one: '{n} luce accesa', other: '{n} luci accese' },
   plugs_on: { one: '{n} presa accesa', other: '{n} prese accese' },
@@ -57,6 +54,22 @@ export const it: Translation = {
   purple: 'Viola',
   pink: 'Rosa',
 
+  home: 'Casa',
+  inside: 'Interno',
+  outside: 'Esterno',
+  floors: 'Piani',
+  lights: 'Luci',
+  outlets: 'Prese',
+  lights_off: 'Luci spente',
+  all_on: 'Accendi tutto',
+  outlets_on: { one: '{n} di {total} accesa', other: '{n} di {total} accese' },
+  outlets_off_confirm: { one: 'Tocca di nuovo per spegnere {n} presa', other: 'Tocca di nuovo per spegnere {n} prese' },
+  tap_to_confirm: 'Tocca di nuovo per confermare',
+  turned_off_outlets: { one: '{n} presa spenta', other: '{n} prese spente' },
+  back: 'Indietro',
+  rooms_count: { one: '{n} stanza', other: '{n} stanze' },
+  floor_controls: 'Controlli del piano',
+  home_controls: 'Tutta la casa',
   editor_intro:
     'Luci e prese vengono trovate automaticamente e raggruppate in base alle aree di Home Assistant. I nuovi dispositivi compaiono da soli e quelli rimossi spariscono. Usa le sezioni qui sotto solo per le rifiniture.',
   section_display: 'Visualizzazione',
@@ -65,9 +78,9 @@ export const it: Translation = {
   section_entities: 'Entità',
   section_behavior: 'Comportamento',
   cfg_title: 'Titolo',
-  cfg_show_house: 'Illustrazione della casa',
-  cfg_show_summary: 'Riepilogo e "Spegni tutto"',
-  cfg_show_room_filter: 'Filtro stanze',
+  cfg_show_house: 'Casa in 3D',
+  cfg_show_summary: 'Riepilogo sotto il titolo',
+  cfg_show_room_filter: 'Selettore del piano',
   cfg_show_scenes: 'Scene delle stanze',
   cfg_icon_style: 'Icone',
   opt_icon_auto: "Illustrazioni della scheda, a meno che l'entità abbia un'icona propria",
@@ -80,9 +93,6 @@ export const it: Translation = {
   opt_outlet_all: 'Tutti gli interruttori',
   help_outlet_detection:
     'Suggerimento: in Home Assistant imposta un interruttore su "Mostra come: Presa" e conterà sempre come presa.',
-  cfg_room_switch_outlets: 'Gli interruttori delle stanze e "Spegni tutto" spengono anche le prese',
-  help_room_switch_outlets:
-    'Disattivato per impostazione predefinita, così un interruttore di stanza non toglie mai corrente a frigorifero o computer.',
   cfg_areas: 'Solo queste aree (in questo ordine)',
   help_areas: 'Lascia vuoto per mostrare tutte le aree.',
   cfg_floors: 'Solo questi piani',

@@ -379,6 +379,15 @@
             </select>
           </section>
           <section class="group">
+            <h2>Home layout</h2>
+            <div class="segmented" data-control="home" role="group" aria-label="Home layout">
+              <button type="button" id="home-floors" data-value="floors" aria-pressed="true">Floors</button>
+              <button type="button" id="home-flat" data-value="flat" aria-pressed="false">No floors</button>
+              <button type="button" id="home-bare" data-value="bare" aria-pressed="false">No areas</button>
+            </div>
+            <p class="hint">How the card builds the house from your floors and areas, and what it does without them.</p>
+          </section>
+          <section class="group">
             <h2>Discovery</h2>
             <button type="button" class="action" id="discover">Add a Kitchen Island bulb</button>
             <p class="hint">
@@ -388,21 +397,23 @@
           <section class="group">
             <h2>Options</h2>
             <div class="toggles">
-              <label
-                ><input type="checkbox" id="opt-house" data-option="show_house" checked /> House illustration</label
-              >
-              <label><input type="checkbox" id="opt-outlets" data-option="show_outlets" checked /> Smart plugs</label>
+              <label><input type="checkbox" id="opt-house" data-option="show_house" checked /> 3D house</label>
+              <label><input type="checkbox" id="opt-outlets" data-option="show_outlets" checked /> Outlets</label>
               <label><input type="checkbox" id="opt-scenes" data-option="show_scenes" checked /> Room scenes</label>
             </div>
           </section>
           <section class="group">
             <h2>Things to try</h2>
             <ul class="try">
+              <li>
+                <b>Floors</b><span>Switch between the whole home, each floor and the garden above the house.</span>
+              </li>
+              <li><b>Rooms</b><span>Tap a window, or a room on an open floor, to see that room up close.</span></li>
               <li><b>Tap</b><span>a tile to switch it on or off.</span></li>
               <li><b>Slide</b><span>sideways across a light to dim it.</span></li>
               <li><b>Hold</b><span>a tile, or tap its color dot, for color and white temperature.</span></li>
-              <li><b>Window</b><span>Tap one in the house to focus that room.</span></li>
-              <li><b>Undo</b><span>Switch a room off, then take it back from the toast.</span></li>
+              <li><b>Outlets</b><span>have their own switch. Turning several off takes a second tap.</span></li>
+              <li><b>Undo</b><span>Switch the lights off, then take it back from the notification.</span></li>
             </ul>
           </section>
           <section class="group">
@@ -417,8 +428,8 @@
       </div>
 
       <footer>
-        Simulated home: 13 areas on three floors, 24 lights and 5 plugs, plus hidden and retired devices the card skips.
-        Nothing on this page talks to a real Home Assistant. Source and install guide:
+        Simulated home: 13 areas on three floors, 24 lights and 5 outlets, plus hidden and retired devices the card
+        skips. Nothing on this page talks to a real Home Assistant. Source and install guide:
         <a href="https://github.com/kedube/ha-light-control" target="_blank" rel="noopener"
           >github.com/kedube/ha-light-control</a
         >

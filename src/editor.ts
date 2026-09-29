@@ -57,7 +57,6 @@ function buildSchema(): Schema[] {
             ['all_switches', 'opt_outlet_all'],
           ]),
         },
-        { name: 'room_switch_outlets', selector: { boolean: {} } },
       ],
     },
     {
@@ -122,7 +121,6 @@ function buildSchema(): Schema[] {
 
 const HELPERS: Record<string, StringKey> = {
   outlet_detection: 'help_outlet_detection',
-  room_switch_outlets: 'help_room_switch_outlets',
   areas: 'help_areas',
   exclude_patterns: 'help_exclude_patterns',
   live_brightness: 'help_live_brightness',

@@ -1,12 +1,9 @@
 import type { Translation } from './en.ts';
 
 export const pt: Translation = {
-  rooms: 'Ambientes',
-  all_rooms: 'Todos',
   on_now: 'Ligados agora',
   other: 'Outros',
   all_off: 'Desligar tudo',
-  all_off_label: 'Desligar todas as luzes',
   everything_off: 'Tudo está desligado',
   lights_on: { one: '{n} luz acesa', other: '{n} luzes acesas' },
   plugs_on: { one: '{n} tomada ligada', other: '{n} tomadas ligadas' },
@@ -57,6 +54,25 @@ export const pt: Translation = {
   purple: 'Roxo',
   pink: 'Rosa',
 
+  home: 'Casa',
+  inside: 'Interior',
+  outside: 'Exterior',
+  floors: 'Andares',
+  lights: 'Luzes',
+  outlets: 'Tomadas',
+  lights_off: 'Luzes apagadas',
+  all_on: 'Ligar tudo',
+  outlets_on: { one: '{n} de {total} ligada', other: '{n} de {total} ligadas' },
+  outlets_off_confirm: {
+    one: 'Toque novamente para desligar {n} tomada',
+    other: 'Toque novamente para desligar {n} tomadas',
+  },
+  tap_to_confirm: 'Toque novamente para confirmar',
+  turned_off_outlets: { one: '{n} tomada desligada', other: '{n} tomadas desligadas' },
+  back: 'Voltar',
+  rooms_count: { one: '{n} ambiente', other: '{n} ambientes' },
+  floor_controls: 'Controles do andar',
+  home_controls: 'Casa inteira',
   editor_intro:
     'Luzes e tomadas são encontradas automaticamente e agrupadas pelas áreas do Home Assistant. Dispositivos novos aparecem sozinhos e os removidos desaparecem. Use as seções abaixo só para ajustes finos.',
   section_display: 'Exibição',
@@ -65,9 +81,9 @@ export const pt: Translation = {
   section_entities: 'Entidades',
   section_behavior: 'Comportamento',
   cfg_title: 'Título',
-  cfg_show_house: 'Ilustração da casa',
-  cfg_show_summary: 'Resumo e "Desligar tudo"',
-  cfg_show_room_filter: 'Filtro de ambientes',
+  cfg_show_house: 'Casa em 3D',
+  cfg_show_summary: 'Resumo abaixo do título',
+  cfg_show_room_filter: 'Seletor de andar',
   cfg_show_scenes: 'Cenas dos ambientes',
   cfg_icon_style: 'Ícones',
   opt_icon_auto: 'Ilustrações do cartão, a menos que a entidade tenha ícone próprio',
@@ -80,9 +96,6 @@ export const pt: Translation = {
   opt_outlet_all: 'Todos os interruptores',
   help_outlet_detection:
     'Dica: no Home Assistant, defina um interruptor como "Mostrar como: Tomada" e ele sempre contará como tomada.',
-  cfg_room_switch_outlets: 'Interruptores de ambiente e "Desligar tudo" também desligam tomadas',
-  help_room_switch_outlets:
-    'Desativado por padrão, para que um interruptor de ambiente nunca corte a energia de uma geladeira ou de um computador.',
   cfg_areas: 'Só estas áreas (nesta ordem)',
   help_areas: 'Deixe vazio para mostrar todas as áreas.',
   cfg_floors: 'Só estes andares',

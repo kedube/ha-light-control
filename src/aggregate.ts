@@ -21,6 +21,10 @@ export interface Summary {
   maxKelvin: number;
   /** Command targets: every light, including groups. */
   lightIds: string[];
+  /** The lights that are counted (groups only when a room has nothing else). */
+  countedIds: string[];
+  /** Counted lights that are on: what dimming and color changes apply to. */
+  litIds: string[];
   plugIds: string[];
   /** Total draw of plugs with a power sensor, in watts; null when none report power. */
   watts: number | null;
@@ -38,18 +42,25 @@ export function readWatts(hass: HomeAssistant, sensorId: string | undefined): nu
   return value;
 }
 
-export function summarize(
-  entities: DiscoveredEntity[],
-  viewOf: (entity: DiscoveredEntity) => EntityView | undefined,
+/** Groups duplicate their members; a room's groups only count when it has nothing else. */
+function countedLights(entities: DiscoveredEntity[]): DiscoveredEntity[] {
+  const lights = entities.filter((e) => e.kind === 'light');
+  return lights.some((e) => !e.isGroup) ? lights.filter((e) => !e.isGroup) : lights;
+}
+
+type ViewOf = (entity: DiscoveredEntity) => EntityView | undefined;
+
+function aggregate(
+  counted: DiscoveredEntity[],
+  lights: DiscoveredEntity[],
+  plugs: DiscoveredEntity[],
+  viewOf: ViewOf,
   hass: HomeAssistant,
 ): Summary {
-  const lightEntities = entities.filter((e) => e.kind === 'light');
-  // Groups duplicate their members; only count them when a room has nothing else.
-  const counted = lightEntities.some((e) => !e.isGroup) ? lightEntities.filter((e) => !e.isGroup) : lightEntities;
   const summary: Summary = {
     lights: counted.length,
     lightsOn: 0,
-    plugs: 0,
+    plugs: plugs.length,
     plugsOn: 0,
     brightness: 0,
     rgb: null,
@@ -59,8 +70,10 @@ export function summarize(
     supportsTemp: false,
     minKelvin: Number.POSITIVE_INFINITY,
     maxKelvin: 0,
-    lightIds: lightEntities.map((e) => e.entityId),
-    plugIds: [],
+    lightIds: lights.map((e) => e.entityId),
+    countedIds: counted.map((e) => e.entityId),
+    litIds: [],
+    plugIds: plugs.map((e) => e.entityId),
     watts: null,
   };
 
@@ -80,6 +93,7 @@ export function summarize(
     }
     if (!view.on) continue;
     summary.lightsOn++;
+    summary.litIds.push(entity.entityId);
     levelSum += view.brightness / 100;
     colors.push({ rgb: view.rgb, weight: 0.25 + view.brightness / 100 });
     if (view.dimmable) {
@@ -95,16 +109,39 @@ export function summarize(
   summary.level = summary.lightsOn ? levelSum / summary.lightsOn : 0;
   summary.rgb = averageRgb(colors);
 
-  for (const entity of entities) {
-    if (entity.kind === 'light') continue;
-    summary.plugs++;
-    summary.plugIds.push(entity.entityId);
+  for (const entity of plugs) {
     const view = viewOf(entity);
     if (view?.on) summary.plugsOn++;
     const watts = readWatts(hass, entity.sensors.power);
     if (watts !== null) summary.watts = (summary.watts ?? 0) + (view?.on || watts > 0 ? watts : 0);
   }
   return summary;
+}
+
+/** Everything in one room. */
+export function summarize(entities: DiscoveredEntity[], viewOf: ViewOf, hass: HomeAssistant): Summary {
+  return aggregate(
+    countedLights(entities),
+    entities.filter((e) => e.kind === 'light'),
+    entities.filter((e) => e.kind !== 'light'),
+    viewOf,
+    hass,
+  );
+}
+
+/** Several rooms together (a floor, the whole home), counting each room's lights its own way. */
+export function summarizeRooms(
+  rooms: { entities: DiscoveredEntity[] }[],
+  viewOf: ViewOf,
+  hass: HomeAssistant,
+): Summary {
+  return aggregate(
+    rooms.flatMap((r) => countedLights(r.entities)),
+    rooms.flatMap((r) => r.entities.filter((e) => e.kind === 'light')),
+    rooms.flatMap((r) => r.entities.filter((e) => e.kind !== 'light')),
+    viewOf,
+    hass,
+  );
 }
 
 export function formatWatts(watts: number, language?: string): string {

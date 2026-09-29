@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing, svg, type PropertyValues } from 'lit';
-import { formatWatts, readWatts, summarize, type Summary } from '../aggregate.ts';
+import { formatWatts, readWatts, summarizeRooms, type Summary } from '../aggregate.ts';
 import {
   HUE_PRESETS,
   KELVIN_PRESETS,
@@ -26,6 +26,7 @@ import {
   mdiPalette,
   mdiPlay,
   mdiPower,
+  mdiPowerPlug,
   mdiWhiteBalanceSunny,
 } from '../icons.ts';
 import { t } from '../localize.ts';
@@ -37,7 +38,16 @@ import type { PickDetail } from './lc-wheel.ts';
 import './lc-wheel.ts';
 
 export type SheetTarget =
-  { type: 'entity'; entity: DiscoveredEntity; roomName?: string } | { type: 'room'; room: Room };
+  | { type: 'entity'; entity: DiscoveredEntity; roomName?: string }
+  | {
+      /** A room, a floor or the whole home. */
+      type: 'scope';
+      key: string;
+      eyebrow: string;
+      title: string;
+      rooms: Room[];
+      scenes: string[];
+    };
 
 type Tab = 'color' | 'white';
 
@@ -70,6 +80,7 @@ export class LcSheet extends LitElement {
     _tab: { state: true },
     _preview: { state: true },
     _history: { state: true },
+    _confirmOff: { state: true },
     _dragY: { state: true },
   };
 
@@ -82,6 +93,8 @@ export class LcSheet extends LitElement {
   declare _tab: Tab;
   declare _preview: Preview;
   declare _history?: HistoryPoint[];
+  /** "All off" for several outlets is waiting for its second tap. */
+  declare _confirmOff: boolean;
   declare _dragY: number;
 
   private swipe?: { pointerId: number; y: number };
@@ -98,6 +111,7 @@ export class LcSheet extends LitElement {
     this._tab = 'color';
     this._preview = {};
     this._dragY = 0;
+    this._confirmOff = false;
   }
 
   private get dialog(): HTMLDialogElement | null {
@@ -135,12 +149,22 @@ export class LcSheet extends LitElement {
     this.dialog?.close();
   }
 
+  private confirmTimer?: ReturnType<typeof setTimeout>;
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    clearTimeout(this.confirmTimer);
+    this._confirmOff = false;
+  }
+
   private resetFor(target: SheetTarget): void {
+    clearTimeout(this.confirmTimer);
+    this._confirmOff = false;
     this._preview = {};
     this._dragY = 0;
     this._history = undefined;
     const view = target.type === 'entity' ? this.viewOf(target.entity) : undefined;
-    const summary = target.type === 'room' ? this.roomSummary(target.room) : undefined;
+    const summary = target.type === 'scope' ? this.scopeSummary(target.rooms) : undefined;
     const supportsColor = view?.supportsColor ?? summary?.supportsColor ?? false;
     const supportsTemp = view?.supportsTemp ?? summary?.supportsTemp ?? false;
     this._tab = supportsColor && !(supportsTemp && view?.colorMode === 'color_temp') ? 'color' : 'white';
@@ -151,8 +175,8 @@ export class LcSheet extends LitElement {
     return this.controller?.view(entity.entityId, entity.kind);
   }
 
-  private roomSummary(room: Room): Summary {
-    return summarize(room.entities, (e) => this.viewOf(e), this.hass);
+  private scopeSummary(rooms: Room[]): Summary {
+    return summarizeRooms(rooms, (e) => this.viewOf(e), this.hass);
   }
 
   protected override render() {
@@ -167,11 +191,11 @@ export class LcSheet extends LitElement {
   }
 
   private titleFor(target: SheetTarget): string {
-    return target.type === 'room' ? target.room.name : target.entity.fullName;
+    return target.type === 'scope' ? target.title : target.entity.fullName;
   }
 
   private renderSheet(target: SheetTarget) {
-    if (target.type === 'room') return this.renderRoom(target.room);
+    if (target.type === 'scope') return this.renderScope(target);
     const view = this.viewOf(target.entity);
     if (!view) return nothing;
     return target.entity.kind === 'light'
@@ -300,6 +324,7 @@ export class LcSheet extends LitElement {
       'supportsColor' | 'supportsTemp' | 'hs' | 'kelvin' | 'minKelvin' | 'maxKelvin' | 'colorMode' | 'unavailable'
     >,
     ids: string[],
+    kelvinIds = ids,
   ) {
     const tab: Tab = view.supportsColor && view.supportsTemp ? this._tab : view.supportsColor ? 'color' : 'white';
     return html`<div class="picker">
@@ -311,7 +336,7 @@ export class LcSheet extends LitElement {
         .maxKelvin=${view.maxKelvin}
         .active=${tab === 'color' ? view.colorMode !== 'color_temp' : view.colorMode === 'color_temp'}
         ?disabled=${view.unavailable}
-        @lc-pick=${(ev: CustomEvent<PickDetail>) => this.onPick(ev, ids)}
+        @lc-pick=${(ev: CustomEvent<PickDetail>) => this.onPick(ev, ids, kelvinIds)}
       ></lc-wheel>
       ${
         view.supportsColor && view.supportsTemp
@@ -338,6 +363,7 @@ export class LcSheet extends LitElement {
   private renderPresets(
     view: Pick<EntityView, 'supportsColor' | 'supportsTemp' | 'minKelvin' | 'maxKelvin' | 'unavailable'>,
     ids: string[],
+    kelvinIds = ids,
   ) {
     const tab: Tab = view.supportsColor && view.supportsTemp ? this._tab : view.supportsColor ? 'color' : 'white';
     const swatches =
@@ -345,7 +371,8 @@ export class LcSheet extends LitElement {
         ? KELVIN_PRESETS.filter((p) => p.kelvin >= view.minKelvin - 60 && p.kelvin <= view.maxKelvin + 60).map((p) => ({
             label: t(p.key),
             rgb: kelvinToDisplayRgb(p.kelvin),
-            apply: () => this.controller.setKelvin(ids, Math.min(view.maxKelvin, Math.max(view.minKelvin, p.kelvin))),
+            apply: () =>
+              this.controller.setKelvin(kelvinIds, Math.min(view.maxKelvin, Math.max(view.minKelvin, p.kelvin))),
           }))
         : HUE_PRESETS.map((p) => ({
             label: t(p.key),
@@ -398,12 +425,12 @@ export class LcSheet extends LitElement {
     }
   }
 
-  private onPick(ev: CustomEvent<PickDetail>, ids: string[]): void {
+  private onPick(ev: CustomEvent<PickDetail>, ids: string[], kelvinIds = ids): void {
     const { hs, kelvin, final } = ev.detail;
     if (final) {
       this._preview = { ...this._preview, rgb: undefined };
       if (hs) this.controller.setHs(ids, hs);
-      else if (kelvin) this.controller.setKelvin(ids, kelvin);
+      else if (kelvin) this.controller.setKelvin(kelvinIds, kelvin);
       return;
     }
     this._preview = { ...this._preview, rgb: hs ? hsToRgb(hs[0], hs[1]) : kelvinToRgb(kelvin!) };
@@ -518,18 +545,23 @@ export class LcSheet extends LitElement {
     }
   }
 
-  // ─── Rooms ─────────────────────────────────────────────────────────────────
+  // ─── Rooms, floors and the whole home ───────────────────────────────────────
 
-  private renderRoom(room: Room) {
-    const summary = this.roomSummary(room);
+  private renderScope(target: Extract<SheetTarget, { type: 'scope' }>) {
+    const summary = this.scopeSummary(target.rooms);
     const brightness = this._preview.brightness ?? summary.brightness;
     const on = this._preview.brightness !== undefined ? brightness > 0 : summary.lightsOn > 0;
     const rgb = this._preview.rgb ?? summary.rgb ?? [255, 196, 116];
-    const ids = summary.lightIds;
-    const lead = room.entities
-      .filter((e) => e.kind === 'light')
+    // Color and brightness go to the lights that are on; with none on, to all of them.
+    const targets = summary.litIds.length ? summary.litIds : summary.countedIds;
+    const views = target.rooms
+      .flatMap((r) => r.entities)
+      .filter((e) => targets.includes(e.entityId))
       .map((e) => this.viewOf(e))
-      .find((v) => v?.on && (v.supportsColor || v.supportsTemp));
+      .filter((v): v is EntityView => Boolean(v));
+    const lead = views.find((v) => v.on && (v.supportsColor || v.supportsTemp));
+    const colorIds = views.filter((v) => v.supportsColor).map((v) => v.entityId);
+    const tempIds = views.filter((v) => v.supportsColor || v.supportsTemp).map((v) => v.entityId);
     const pickerView = {
       supportsColor: summary.supportsColor,
       supportsTemp: summary.supportsTemp,
@@ -540,63 +572,151 @@ export class LcSheet extends LitElement {
       colorMode: lead?.colorMode,
       unavailable: false,
     };
+    const hasLights = summary.lightIds.length > 0;
     const hasPicker = summary.supportsColor || summary.supportsTemp;
-    const status = summary.lightsOn
-      ? summary.lightsOn === summary.lights
-        ? t('room_all_on')
-        : t('room_on', { n: summary.lightsOn, total: summary.lights })
-      : t('everything_off');
+    const status = !hasLights
+      ? summary.plugsOn
+        ? t('plugs_on', { n: summary.plugsOn })
+        : t('everything_off')
+      : summary.lightsOn
+        ? summary.lightsOn === summary.lights
+          ? t('room_all_on')
+          : t('room_on', { n: summary.lightsOn, total: summary.lights })
+        : t('lights_off');
+    const outlets = target.rooms.flatMap((r) => r.entities.filter((e) => e.kind !== 'light'));
+    // Undo toasts name a room or a floor ("Turned off Kitchen"); the whole home counts instead.
+    const toastName = target.key === 'home' ? undefined : target.title;
 
     return this.frame({
       kind: 'room',
-      eyebrow: t('room_controls'),
-      title: room.name,
+      eyebrow: target.eyebrow,
+      title: target.title,
       status,
       rgb,
       glow: on ? 0.3 + (brightness / 100) * 0.7 : 0,
       body: html`
         ${
-          ids.length && summary.dimmable
+          hasLights && summary.dimmable
             ? html`<div class="stage ${hasPicker ? '' : 'solo'}">
                 <div class="pill-col">
                   <lc-pill
                     .value=${on ? brightness : 0}
-                    @lc-slide=${(ev: CustomEvent<SlideDetail>) => this.onSlide(ev, ids)}
+                    @lc-slide=${(ev: CustomEvent<SlideDetail>) => this.onScopeSlide(ev, summary, toastName)}
                   ></lc-pill>
                   ${this.powerButton(on, false, () =>
-                    on ? this.controller.turnOffWithUndo(ids, room.name) : this.controller.setPower(ids, true),
+                    on
+                      ? this.controller.turnOffWithUndo(summary.lightIds, toastName)
+                      : this.controller.setPower(summary.countedIds, true),
                   )}
                 </div>
-                ${hasPicker ? this.renderPicker(pickerView, ids) : nothing}
+                ${hasPicker ? this.renderPicker(pickerView, colorIds.length ? colorIds : tempIds, tempIds) : nothing}
               </div>`
             : nothing
         }
         ${side(
-          hasPicker ? this.renderPresets(pickerView, ids) : nothing,
-          room.scenes.length
+          hasPicker && hasLights ? this.renderPresets(pickerView, colorIds, tempIds) : nothing,
+          hasLights
+            ? html`<div class="room-actions">
+                <button class="pill-button" @click=${() => this.controller.setPower(summary.countedIds, true)}>
+                  ${icon(mdiLightbulbOnOutline)}<span>${t('all_on')}</span>
+                </button>
+                <button
+                  class="pill-button"
+                  @click=${() => this.controller.turnOffWithUndo(summary.lightIds, toastName)}
+                >
+                  ${icon(mdiLightbulbOffOutline)}<span>${t('all_off')}</span>
+                </button>
+              </div>`
+            : nothing,
+          target.scenes.length
             ? html`<div class="section-label">${t('scenes')}</div>
                 <div class="scenes">
-                  ${room.scenes.map(
+                  ${target.scenes.map(
                     (id) =>
                       html`<button class="scene" @click=${() => this.controller.activateScene(id)}>
-                        ${icon(mdiPlay)}<span>${this.sceneName(id, room.name)}</span>
+                        ${icon(mdiPlay)}<span>${this.sceneName(id, target.title)}</span>
                       </button>`,
                   )}
                 </div>`
             : nothing,
-          ids.length
-            ? html`<div class="room-actions">
-                <button class="pill-button" @click=${() => this.controller.setPower(ids, true)}>
-                  ${icon(mdiLightbulbOnOutline)}<span>${t('turn_on')}</span>
-                </button>
-                <button class="pill-button" @click=${() => this.controller.turnOffWithUndo(ids, room.name)}>
-                  ${icon(mdiLightbulbOffOutline)}<span>${t('turn_off')}</span>
-                </button>
-              </div>`
-            : nothing,
+          outlets.length ? this.renderOutletList(outlets, summary, toastName) : nothing,
         )}
       `,
     });
+  }
+
+  private onScopeSlide(ev: CustomEvent<SlideDetail>, summary: Summary, name?: string): void {
+    const { value, final } = ev.detail;
+    if (final) {
+      this._preview = { ...this._preview, brightness: undefined };
+      this.controller.adjustBrightness(summary, value, name);
+    } else {
+      this._preview = { ...this._preview, brightness: value };
+      if (this.liveBrightness) this.controller.previewAdjust(summary, value);
+    }
+  }
+
+  /** Outlets have their own section: turning the lights off never cuts their power. */
+  private renderOutletList(outlets: DiscoveredEntity[], summary: Summary, name?: string) {
+    const language = this.hass.locale?.language ?? this.hass.language;
+    const parts = [summary.plugsOn ? t('outlets_on', { n: summary.plugsOn, total: summary.plugs }) : t('off')];
+    if (summary.watts !== null && summary.watts > 0) parts.push(formatWatts(summary.watts, language));
+    return html`<div class="section-label outlets-label">
+        <span>${t('outlets')}</span><span class="section-meta">${parts.join(' · ')}</span>
+      </div>
+      <div class="outlet-list">
+        ${outlets.map((entity) => {
+          const view = this.viewOf(entity);
+          if (!view) return nothing;
+          const watts = readWatts(this.hass, entity.sensors.power);
+          return html`<div class="outlet-item ${view.on ? 'is-on' : ''}">
+            <span class="outlet-icon">${icon(mdiPowerPlug)}</span>
+            <span class="outlet-name">${entity.name}</span>
+            ${watts !== null && view.on ? html`<span class="outlet-watts">${formatWatts(watts, language)}</span>` : nothing}
+            <button
+              class="mini-switch ${view.on ? 'on' : ''}"
+              role="switch"
+              aria-checked=${view.on ? 'true' : 'false'}
+              aria-label=${entity.fullName}
+              ?disabled=${view.unavailable}
+              @click=${() => this.controller.toggle(entity.entityId, entity.kind)}
+            >
+              <span class="knob"></span>
+            </button>
+          </div>`;
+        })}
+      </div>
+      ${
+        outlets.length > 1
+          ? html`<div class="room-actions">
+              <button class="pill-button" @click=${() => this.controller.setPower(summary.plugIds, true)}>
+                ${icon(mdiPowerPlug)}<span>${t('all_on')}</span>
+              </button>
+              <button
+                class="pill-button ${this._confirmOff ? 'warning' : ''}"
+                aria-live="polite"
+                ?disabled=${!summary.plugsOn}
+                @click=${() => this.onOutletsOff(summary, name)}
+              >
+                ${icon(mdiPower)}<span
+                  >${this._confirmOff ? t('outlets_off_confirm', { n: summary.plugsOn }) : t('all_off')}</span
+                >
+              </button>
+            </div>`
+          : nothing
+      }`;
+  }
+
+  /** Like the card's outlet switches: turning several off takes a second tap. */
+  private onOutletsOff(summary: Summary, name?: string): void {
+    clearTimeout(this.confirmTimer);
+    if (summary.plugsOn > 1 && !this._confirmOff) {
+      this._confirmOff = true;
+      this.confirmTimer = setTimeout(() => (this._confirmOff = false), 4000);
+      return;
+    }
+    this._confirmOff = false;
+    this.controller.turnOffWithUndo(summary.plugIds, summary.plugsOn > 1 ? name : undefined, 'outlets');
   }
 
   private sceneName(sceneId: string, roomName: string): string {
@@ -1057,8 +1177,107 @@ export class LcSheet extends LitElement {
         grid-template-columns: 1fr 1fr;
         gap: 10px;
       }
+      .outlets-label {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 4px;
+      }
+      .section-meta {
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .outlet-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .outlet-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-height: 52px;
+        padding: 6px 10px 6px 8px;
+        box-sizing: border-box;
+        border-radius: 16px;
+        background: var(--lc-surface);
+      }
+      .outlet-icon {
+        flex: none;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--lc-surface-2);
+        color: var(--lc-text-2);
+        transition:
+          background 0.3s ease,
+          color 0.3s ease;
+      }
+      .is-on .outlet-icon {
+        background: rgba(var(--lc-outlet), 0.18);
+        color: rgb(var(--lc-outlet));
+      }
+      .outlet-name {
+        flex: 1;
+        min-width: 0;
+        font-size: 14.5px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .outlet-watts {
+        font-size: 13.5px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        color: rgb(var(--lc-outlet));
+      }
+      .mini-switch {
+        position: relative;
+        flex: none;
+        width: 46px;
+        height: 28px;
+        border-radius: 14px;
+        background: rgba(var(--lc-rgb-text), 0.18);
+        transition: background 0.3s ease;
+      }
+      .mini-switch .knob {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+        transition: transform 0.28s cubic-bezier(0.3, 0.7, 0.4, 1.3);
+      }
+      .mini-switch.on {
+        background: rgb(var(--lc-outlet));
+      }
+      .mini-switch.on .knob {
+        transform: translateX(18px);
+      }
+      .mini-switch:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
       .room-actions .pill-button {
         justify-content: center;
+      }
+      .pill-button.warning {
+        background: rgba(255, 170, 60, 0.18);
+        color: rgb(255, 170, 60);
+        box-shadow: inset 0 0 0 1.5px rgba(255, 170, 60, 0.7);
+      }
+      .pill-button:disabled {
+        opacity: 0.45;
+        cursor: default;
       }
       @media (max-width: 380px) {
         .stage {
@@ -1141,7 +1360,7 @@ export class LcSheet extends LitElement {
 }
 
 function targetKey(target: SheetTarget): string {
-  return target.type === 'room' ? `room:${target.room.id}` : `entity:${target.entity.entityId}`;
+  return target.type === 'scope' ? `scope:${target.key}` : `entity:${target.entity.entityId}`;
 }
 
 if (!customElements.get('lc-sheet')) customElements.define('lc-sheet', LcSheet);

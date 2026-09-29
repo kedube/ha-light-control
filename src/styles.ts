@@ -8,8 +8,11 @@ export const themeVars = css`
     --lc-text-2: var(--secondary-text-color, #6b6b6b);
     --lc-rgb-text: var(--rgb-primary-text-color, 28, 28, 28);
     --lc-bg: var(--ha-card-background, var(--card-background-color, #fff));
-    --lc-surface: rgba(var(--lc-rgb-text), 0.045);
-    --lc-surface-2: rgba(var(--lc-rgb-text), 0.08);
+    --lc-surface: rgba(var(--lc-rgb-text), 0.04);
+    --lc-surface-2: rgba(var(--lc-rgb-text), 0.075);
+    --lc-surface-3: rgba(var(--lc-rgb-text), 0.12);
+    --lc-border: rgba(var(--lc-rgb-text), 0.07);
+    --lc-border-strong: rgba(var(--lc-rgb-text), 0.16);
     --lc-line: rgba(var(--lc-rgb-text), 0.42);
     --lc-glass-off: rgba(var(--lc-rgb-text), 0.06);
     --lc-outlet: var(--lc-outlet-rgb, 38, 196, 152);

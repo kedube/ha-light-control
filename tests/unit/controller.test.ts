@@ -112,6 +112,71 @@ describe('LightController', () => {
     );
   });
 
+  it('dims a room, floor or home through the lights that are on', async () => {
+    const { calls, controller } = setup();
+    controller.adjustBrightness(
+      { litIds: ['light.living_room_lamp'], countedIds: ['light.living_room_lamp', 'light.living_room_ceiling'] },
+      30,
+    );
+    await settle();
+    assert.deepEqual(calls[0].data, { entity_id: ['light.living_room_lamp'], brightness_pct: 30 });
+    calls.length = 0;
+    controller.adjustBrightness({ litIds: [], countedIds: ['light.living_room_ceiling'] }, 60);
+    await settle();
+    assert.deepEqual(
+      calls[0].data,
+      { entity_id: ['light.living_room_ceiling'], brightness_pct: 60 },
+      'nothing on: all of them',
+    );
+  });
+
+  it('keeps a live slider drag on the lights it started with', () => {
+    mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
+    try {
+      const { calls, controller } = setup();
+      const both = ['light.living_room_lamp', 'light.living_room_ceiling'];
+      controller.previewAdjust({ litIds: [], countedIds: both }, 20);
+      mock.timers.tick(100);
+      controller.previewAdjust({ litIds: [], countedIds: both }, 40);
+      mock.timers.tick(100);
+      // Part-way through, Home Assistant reports one of them on.
+      controller.adjustBrightness({ litIds: ['light.living_room_lamp'], countedIds: both }, 80);
+      mock.timers.tick(2000);
+      assert.deepEqual(
+        calls.map((c) => [c.data.entity_id, c.data.brightness_pct]),
+        [
+          [both, 20],
+          [both, 80],
+        ],
+      );
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it('turns lights off with Undo when a room slider reaches zero', async () => {
+    const { calls, controller, host } = setup();
+    let message = '';
+    host.addEventListener('hass-notification', (ev) => (message = (ev as CustomEvent).detail.message));
+    controller.adjustBrightness(
+      { litIds: ['light.living_room_lamp'], countedIds: ['light.living_room_lamp'] },
+      0,
+      'Living Room',
+    );
+    await settle();
+    assert.equal(calls[0].service, 'turn_off');
+    assert.equal(message, 'Turned off Living Room');
+  });
+
+  it('says "outlets" when outlets are switched off together', async () => {
+    const { controller, host } = setup();
+    let message = '';
+    host.addEventListener('hass-notification', (ev) => (message = (ev as CustomEvent).detail.message));
+    controller.turnOffWithUndo(['switch.tv_plug', 'switch.strip_outlet_1'], 'Home', 'outlets');
+    await settle();
+    assert.equal(message, 'Turned off 2 outlets');
+  });
+
   it('still turns off a light that is only optimistically on', async () => {
     const { calls, controller } = setup();
     controller.setPower(['light.living_room_ceiling'], true);

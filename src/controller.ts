@@ -22,6 +22,17 @@ interface Snapshot {
 
 const OVERRIDE_TTL = 5000;
 const LIVE_INTERVAL = 350;
+/** How long a room slider's drag remembers the lights it started with between two moves. */
+const DRAG_MEMORY = 2000;
+
+/** The lights of a room, a floor or the home: the ones that are on, and all the counted ones. */
+export interface ScopeTarget {
+  litIds: string[];
+  countedIds: string[];
+}
+
+/** Dimming goes to the lights that are on; with none on, to all of them. */
+const litOrAll = (target: ScopeTarget) => (target.litIds.length ? target.litIds : target.countedIds);
 
 /**
  * Sends commands to Home Assistant and remembers what the user just asked for, so tiles react
@@ -34,6 +45,8 @@ export class LightController {
   private expiryTimer?: ReturnType<typeof setTimeout>;
   private readonly liveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly liveLastSent = new Map<string, number>();
+  /** Room, floor and home sliders being dragged, with the lights each one started on. */
+  private readonly drags = new Map<string, { ids: string[]; at: number }>();
 
   constructor(host: Host) {
     this.host = host;
@@ -110,8 +123,34 @@ export class LightController {
     return this.hass?.callService('scene', 'turn_on', { entity_id: sceneId });
   }
 
+  /**
+   * Dims a room, floor or the whole home: the lights that are on follow the slider and the others
+   * stay off. With nothing on yet, every light comes on at that level. Sliding to 0 offers Undo.
+   */
+  adjustBrightness(target: ScopeTarget, pct: number, name?: string): void {
+    // The drag that led here decided its lights when it started; lights reporting "on" part-way
+    // through must not change which ones the release goes to.
+    const key = target.countedIds.join(',');
+    const drag = this.drags.get(key);
+    this.drags.delete(key);
+    const ids = drag && Date.now() - drag.at < DRAG_MEMORY ? drag.ids : litOrAll(target);
+    if (Math.round(pct) <= 0) {
+      this.cancelLive(ids);
+      this.turnOffWithUndo(ids, name);
+    } else this.setBrightness(ids, pct);
+  }
+
+  /** Live preview while a room, floor or home slider is dragged. */
+  previewAdjust(target: ScopeTarget, pct: number): void {
+    const key = target.countedIds.join(',');
+    const drag = this.drags.get(key);
+    const ids = drag && Date.now() - drag.at < DRAG_MEMORY ? drag.ids : litOrAll(target);
+    this.drags.set(key, { ids, at: Date.now() });
+    if (pct > 0) this.previewBrightness(ids, pct);
+  }
+
   /** Turns everything off and offers an Undo toast that restores each light's brightness and color. */
-  turnOffWithUndo(entityIds: string[], name?: string): void {
+  turnOffWithUndo(entityIds: string[], name?: string, noun: 'lights' | 'outlets' = 'lights'): void {
     // Include things that are only optimistically on: the user sees them on, so "off" must reach them.
     const targets = entityIds.filter((id) => this.hass?.states[id]?.state === 'on' || this.overrides.get(id)?.on);
     if (!targets.length) return;
@@ -120,7 +159,10 @@ export class LightController {
     this.setPower(targets, false);
     if (!snapshot.length) return;
     fireEvent(this.host, 'hass-notification', {
-      message: name && snapshot.length === 1 ? t('turned_off_one', { name }) : t('turned_off', { n: snapshot.length }),
+      message:
+        name && snapshot.length === 1
+          ? t('turned_off_one', { name })
+          : t(noun === 'outlets' ? 'turned_off_outlets' : 'turned_off', { n: snapshot.length }),
       duration: 6000,
       action: { text: t('undo'), action: () => this.restore(snapshot) },
     });

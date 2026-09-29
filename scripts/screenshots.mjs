@@ -5,20 +5,53 @@ import { launchBrowser, startServer } from './static-server.mjs';
 
 const OUT = 'docs/images';
 
+const tile = (name) => ({ tile: name });
+const tab = (index) => ({ click: `light-control-card nav.tabs .tab >> nth=${index}` });
+
 const shots = [
   {
     file: 'overview-dark.png',
     query: '&theme=dark&sky=night',
     width: 1200,
     target: '#card-slot',
-    clipHeight: 1080,
+    clipHeight: 1180,
   },
   {
     file: 'overview-light.png',
     query: '&theme=light&sky=day',
     width: 1200,
     target: '#card-slot',
-    clipHeight: 1080,
+    clipHeight: 1180,
+  },
+  {
+    // One floor opened up like a dollhouse.
+    file: 'floor.png',
+    query: '&theme=dark&sky=night',
+    width: 1200,
+    actions: [tab(1)],
+    target: '#card-slot',
+    clipHeight: 760,
+  },
+  {
+    // One room up close: the house shows where it is, the rows control every light.
+    file: 'room.png',
+    query: '&theme=dark&sky=night',
+    width: 1200,
+    actions: [{ click: 'light-control-card article.room .room-title >> nth=0' }],
+    target: '#card-slot',
+  },
+  {
+    file: 'house-dusk.png',
+    query: '&theme=dark&sky=dusk',
+    width: 1200,
+    target: 'light-control-card .hero',
+  },
+  {
+    file: 'upstairs-day.png',
+    query: '&theme=light&sky=day',
+    width: 1200,
+    actions: [tab(2)],
+    target: 'light-control-card .hero',
   },
   {
     // A Panel view: the card alone, as wide as a desktop screen.
@@ -30,42 +63,38 @@ const shots = [
     target: '#card-slot',
   },
   {
-    file: 'house-dusk.png',
-    query: '&theme=dark&sky=dusk',
-    width: 1200,
-    target: 'light-control-card .header',
-  },
-  {
     file: 'phone.png',
     query: '&theme=dark&sky=night',
     width: 390,
     height: 844,
     scale: 2,
     target: '#card-slot',
-    clipHeight: 780,
+    clipHeight: 1100,
   },
   {
     file: 'controls-color.png',
     query: '&theme=dark',
-    open: 'Floor Lamp',
+    actions: [tile('Floor Lamp')],
     target: 'lc-sheet .sheet',
   },
   {
     file: 'controls-white.png',
     query: '&theme=light',
-    open: 'Ceiling',
+    actions: [tile('Ceiling')],
     target: 'lc-sheet .sheet',
   },
   {
     file: 'plug.png',
     query: '&theme=dark',
-    open: 'TV Plug',
+    actions: [{ rightClick: 'TV Plug' }],
     target: 'lc-sheet .sheet',
   },
   {
-    file: 'room-controls.png',
+    // Lights and outlets for the whole home, each with their own controls.
+    file: 'home-controls.png',
     query: '&theme=light',
-    room: 'Living Room',
+    height: 1200,
+    actions: [{ click: 'light-control-card .control.lights .control-title' }],
     target: 'lc-sheet .sheet',
   },
   {
@@ -73,7 +102,7 @@ const shots = [
     query: '&theme=light&sky=dusk&lang=de',
     width: 1200,
     target: '#card-slot',
-    clipHeight: 760,
+    clipHeight: 900,
   },
 ];
 
@@ -93,21 +122,32 @@ for (const shot of shots) {
   if (shot.panel) {
     await page.evaluate(() => {
       const stage = document.getElementById('stage');
-      document.body.replaceChildren(stage);
+      document.body.replaceChildren(stage, document.getElementById('toasts'));
       stage.style.cssText = 'padding:24px;border:0;border-radius:0';
       document.getElementById('card-slot').style.maxWidth = 'none';
     });
   }
   await page.evaluate(() => document.fonts.ready);
-  if (shot.open) {
-    await page
-      .locator('lc-tile')
-      .filter({ has: page.locator('.name', { hasText: shot.open }) })
-      .first()
-      .locator('button.more')
-      .click();
+  for (const action of shot.actions ?? []) {
+    if (action.click) await page.locator(action.click).click();
+    if (action.tile) {
+      await page
+        .locator('lc-tile')
+        .filter({ has: page.locator('.name', { hasText: action.tile }) })
+        .first()
+        .locator('button.more')
+        .click();
+    }
+    if (action.rightClick) {
+      await page
+        .locator('lc-tile')
+        .filter({ has: page.locator('.name', { hasText: action.rightClick }) })
+        .first()
+        .locator('.tile')
+        .click({ button: 'right' });
+    }
+    await page.waitForTimeout(300);
   }
-  if (shot.room) await page.locator('button.room-title', { hasText: shot.room }).click();
   await page.waitForTimeout(700);
   // Clips are in page coordinates; measure with the page scrolled to the top.
   await page.evaluate(() => window.scrollTo(0, 0));

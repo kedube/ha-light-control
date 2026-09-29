@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { formatWatts, readWatts, summarize } from '../../src/aggregate.ts';
+import { formatWatts, readWatts, summarize, summarizeRooms } from '../../src/aggregate.ts';
 import {
   accentFor,
   averageRgb,
@@ -139,6 +139,33 @@ describe('summarize', () => {
     assert.equal(summary.brightness, 20);
     assert.ok(summary.lightIds.includes('light.bedroom_group'));
     assert.equal(summary.plugs, 2, 'two power-strip outlets; the PC switch is not a plug');
+  });
+
+  it('knows which lights are on, for dimming a whole room', () => {
+    const hass = home();
+    const living = discover(hass, config()).rooms.find((r) => r.id === 'living_room')!;
+    const summary = summarize(living.entities, (e) => entityView(hass.states[e.entityId], e.kind), hass);
+    assert.deepEqual(summary.litIds, ['light.living_room_lamp']);
+    assert.deepEqual(summary.countedIds, ['light.living_room_ceiling', 'light.living_room_lamp']);
+  });
+
+  it('adds up floors and the whole home room by room', () => {
+    const hass = home();
+    hass.areas.den = { area_id: 'den', name: 'Den', floor_id: 'ground' };
+    hass.entities['light.den_group'] = { entity_id: 'light.den_group', area_id: 'den', labels: [] };
+    hass.states['light.den_group'] = state('light.den_group', 'on', {
+      supported_color_modes: ['brightness'],
+      brightness: 255,
+      entity_id: ['light.den_1', 'light.den_2'],
+    });
+    const { rooms } = discover(hass, config());
+    const viewOf = (e: { entityId: string; kind: 'light' | 'outlet' | 'switch' }) =>
+      entityView(hass.states[e.entityId], e.kind);
+    const all = summarizeRooms(rooms, viewOf, hass);
+    // A room whose only light is a group still counts, even beside rooms with single lights.
+    assert.ok(all.countedIds.includes('light.den_group'));
+    assert.ok(!all.countedIds.includes('light.bedroom_group'), 'the bedroom group duplicates its member');
+    assert.equal(all.plugsOn, 2);
   });
 
   it('adds up plug power', () => {

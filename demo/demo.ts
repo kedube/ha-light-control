@@ -10,8 +10,12 @@ import {
   mdiFan,
   mdiFloorLamp,
   mdiGarage,
+  mdiHomeFloor0,
+  mdiHomeFloor1,
+  mdiHomeFloorNegative1,
   mdiHomeLightbulbOutline,
   mdiHomeRoof,
+  mdiHomeVariant,
   mdiLightbulb,
   mdiOutdoorLamp,
   mdiPineTree,
@@ -53,7 +57,11 @@ const ICONS: Record<string, string> = {
   'mdi:fan': mdiFan,
   'mdi:floor-lamp': mdiFloorLamp,
   'mdi:garage': mdiGarage,
+  'mdi:home-floor-0': mdiHomeFloor0,
+  'mdi:home-floor-1': mdiHomeFloor1,
+  'mdi:home-floor-negative-1': mdiHomeFloorNegative1,
   'mdi:home-lightbulb-outline': mdiHomeLightbulbOutline,
+  'mdi:home-variant': mdiHomeVariant,
   'mdi:home-roof': mdiHomeRoof,
   'mdi:lightbulb': mdiLightbulb,
   'mdi:outdoor-lamp': mdiOutdoorLamp,
@@ -189,6 +197,24 @@ const areas: Record<string, AreaRegistryEntry> = {
   porch: area('porch', 'Front Porch', null),
   garage: area('garage', 'Garage', 'ground'),
 };
+
+/**
+ * The demo home can also be laid out without floors (a bungalow, as many homes are set up) or
+ * without any areas at all, to show how the card copes: ?home=flat or ?home=bare.
+ */
+const homeLayout = params.get('home');
+
+function layoutFloors(): Record<string, FloorRegistryEntry> {
+  return homeLayout === 'flat' || homeLayout === 'bare' ? {} : floors;
+}
+
+function layoutAreas(): Record<string, AreaRegistryEntry> {
+  if (homeLayout === 'bare') return {};
+  if (homeLayout === 'flat') {
+    return Object.fromEntries(Object.entries(areas).map(([id, a]) => [id, { ...a, floor_id: null }]));
+  }
+  return areas;
+}
 
 const device = (
   id: string,
@@ -837,8 +863,8 @@ function buildHass(): HomeAssistant {
     states,
     entities,
     devices,
-    areas,
-    floors,
+    areas: layoutAreas(),
+    floors: layoutFloors(),
     config: { country: params.get('country') ?? 'US', language: 'en' },
     themes: { darkMode },
     language,
@@ -1005,6 +1031,14 @@ function wirePage() {
   bindSegmented('theme', (v) => setTheme(v === 'dark'));
   bindSegmented('sky', (v) => setSky(v as 'day' | 'dusk' | 'night'));
   bindSegmented('width', (v) => (stage.dataset.width = v));
+  pressed('home', homeLayout === 'flat' || homeLayout === 'bare' ? homeLayout : 'floors');
+  bindSegmented('home', (v) => {
+    // The registries are read once, like Home Assistant's; a new layout needs a fresh page.
+    const url = new URL(location.href);
+    if (v === 'floors') url.searchParams.delete('home');
+    else url.searchParams.set('home', v);
+    location.assign(url);
+  });
   if (matchMedia('(max-width: 560px)').matches) {
     stage.dataset.width = 'phone';
     pressed('width', 'phone');

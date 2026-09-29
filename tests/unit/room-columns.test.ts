@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { balanceColumns, columnCount, columnWidth, estimateRoomHeight } from '../../src/room-columns.ts';
+import { balanceColumns, columnCount, columnWidth, estimateRoomHeight, tilesPerRow } from '../../src/room-columns.ts';
 
 describe('columnCount', () => {
   it('keeps phones, masonry columns and sections in a single column', () => {
@@ -25,15 +25,26 @@ describe('columnCount', () => {
 });
 
 describe('estimateRoomHeight', () => {
-  it('matches the rendered rooms', () => {
-    // Measured in the demo: tiles stack below 180px wide, so 362px columns get tall tiles.
-    assert.equal(estimateRoomHeight(2, false, 362), 174);
-    assert.equal(estimateRoomHeight(4, true, 362), 322);
-    assert.equal(estimateRoomHeight(3, false, 440), 210);
+  it('grows with each row of tiles, a row of outlets and the scenes', () => {
+    const base = estimateRoomHeight(2, 0, false, 440);
+    assert.ok(estimateRoomHeight(4, 0, false, 440) > base, 'a second row of lights');
+    assert.ok(estimateRoomHeight(2, 1, false, 440) > base, 'outlets get their own row');
+    assert.ok(estimateRoomHeight(2, 0, true, 440) > base, 'scenes');
+    assert.equal(estimateRoomHeight(0, 0, false, 440), 64, 'just the header');
+  });
+
+  it('knows narrow tiles stack their icon above the name', () => {
+    // Two tiles to a row in a 340px column are narrower than 190px, so they stand taller.
+    assert.ok(estimateRoomHeight(2, 0, false, 340) > estimateRoomHeight(2, 0, false, 460));
   });
 
   it('lets a lone tile fill its row', () => {
-    assert.equal(estimateRoomHeight(1, false, 362), 138);
+    assert.equal(estimateRoomHeight(1, 0, false, 340), 64 + 10 + 64);
+  });
+
+  it('fits more tiles to a row in wider rooms', () => {
+    assert.equal(tilesPerRow(340), 2);
+    assert.equal(tilesPerRow(560), 3);
   });
 });
 

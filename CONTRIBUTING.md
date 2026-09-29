@@ -11,7 +11,7 @@ npm ci
 npm run dev
 ```
 
-`npm run dev` rebuilds on every change and serves the demo at <http://localhost:5173/demo/>: the real card running against a simulated Home Assistant in [`demo/demo.ts`](demo/demo.ts). The demo lets you switch theme, time of day, screen width and language, and add or remove a bulb to watch discovery work.
+`npm run dev` rebuilds on every change and serves the demo at <http://localhost:5173/demo/>: the real card running against a simulated Home Assistant in [`demo/demo.ts`](demo/demo.ts). The demo lets you switch theme, time of day, screen width and language, lay the home out with or without floors and areas, and add or remove a bulb to watch discovery work.
 
 To try a build in your own Home Assistant, run `npm run build` and copy `dist/ha-light-control.js` to `config/www/`.
 
@@ -35,16 +35,24 @@ The end-to-end tests use Playwright's Chromium when installed (`npx playwright-c
 ```text
 src/
   index.ts                 registers the card with Home Assistant
-  light-control-card.ts    the card: header, room filter, rooms and tiles
+  light-control-card.ts    the card: house, floor switcher, lights and outlets controls, rooms
   editor.ts                visual editor (wraps Home Assistant's ha-form)
   discovery.ts             finds lights and plugs and groups them into rooms
+  room-types.ts            what kind of room an area is (living room, kitchen, garden…)
+  scope.ts                 the whole home, a floor, the outdoors or one room: which rooms each covers
   entity-model.ts          turns a state object into what the UI shows
   controller.ts            service calls, optimistic updates and undo
-  aggregate.ts             per-room counts, colors, brightness and power
-  house-layout.ts          floors → stories, rooms → windows
+  aggregate.ts             counts, colors, brightness and power for a room, a floor or the home
   room-columns.ts          rooms → balanced columns on wide cards
+  house/
+    plan.ts                floors and areas → a floor plan (rooms along the outside walls, stairs)
+    furniture.ts           furniture for each kind of room
+    scene.ts               the plan and the lights → SVG shapes: outside, or a floor cut open
+    iso.ts                 isometric projection and painter's-order sorting
+    palette.ts             materials, and how daylight and lamps light them
+    sky.ts                 day, dusk or night from the sun
   color.ts, config.ts, localize.ts, graphics.ts, styles.ts
-  components/              tile, house, controls sheet, brightness slider, color wheel
+  components/              house, tile, controls sheet, sliders and color wheel
   translations/            one file per language
 tests/unit/                pure logic, run directly by Node
 tests/e2e/                 the built card in Chromium
@@ -52,7 +60,9 @@ demo/                      simulated Home Assistant and the demo page
 scripts/                   build, screenshots and release helpers
 ```
 
-Keep logic that doesn't need the DOM in plain modules (like `discovery.ts`) so it can be unit tested without a browser. Components use Lit without decorators, so Node can run the TypeScript sources directly.
+Keep logic that doesn't need the DOM in plain modules (like `discovery.ts` and everything in `house/`) so it can be unit tested without a browser. Components use Lit without decorators, so Node can run the TypeScript sources directly.
+
+The 3D house is plain SVG, drawn in isometric projection: no WebGL, no extra dependencies, and it stays sharp at any size. `scene.ts` returns the same list of shapes whatever the lights are doing, so a light turning on fades in rather than redrawing the picture; the unit tests check that.
 
 ## Translations
 
