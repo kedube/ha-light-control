@@ -81,7 +81,7 @@ The card works in any view and adapts to the space it gets. For a whole-house li
 
 ## Using the card
 
-**Places.** The switcher over the house moves between the whole home, each floor and the outdoors. The house follows: the whole home from outside, a floor opened up like a dollhouse, or the garden.
+**Places.** The switcher over the house moves between the whole home, each floor from the lowest up, and the outdoors. The house follows: the whole home from outside, a floor opened up like a dollhouse, or the garden.
 
 **Lights and Outlets.** Under the house, two controls act on the place you are looking at:
 
@@ -125,7 +125,7 @@ The card reads Home Assistant's own registries, so organizing your home in **Set
 
 - **Lights:** every `light.*` entity.
 - **Plugs and outlets:** `switch.*` entities that Home Assistant shows as an outlet, plus, in the default _smart_ mode, switches whose device name or model says plug, outlet, socket or power strip (in any of the supported languages). Settings switches on those devices, such as child lock or LED indicator, stay out.
-- **Rooms:** an entity's own area, or else its device's area. Rooms follow the order of your floors and areas in Home Assistant, which you can drag to reorder. Entities without an area appear under **Other**.
+- **Rooms:** an entity's own area, or else its device's area. Floors are listed from the lowest up, by their level in Home Assistant, and the rooms on each floor follow your area order there, which you can drag to reorder. Entities without an area appear under **Other**.
 - **Left out automatically:** hidden entities, configuration and diagnostic entities, and entities the integration no longer provides.
 - **Names:** the room name is removed from the start of each tile, so "Living Room Floor Lamp" in the Living Room reads "Floor Lamp".
 - **Related sensors:** power, energy, voltage and current sensors on the same device as a plug are attached to it. On power strips, a sensor is attached only when it is clearly named after that outlet.

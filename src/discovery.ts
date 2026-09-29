@@ -1,6 +1,7 @@
 import { makeEntityMatcher, type ResolvedConfig } from './config.ts';
 import { computeDomain, isLightGroup, type EntityKind } from './entity-model.ts';
 import type { EntityRegistryDisplayEntry, HassEntity, HomeAssistant } from './ha-types.ts';
+import { sortFloors } from './house/plan.ts';
 import { isOutdoorName, roomIcon, roomType, type RoomType } from './room-types.ts';
 
 export { isOutdoorName, roomIcon } from './room-types.ts';
@@ -258,13 +259,17 @@ export function discover(hass: HomeAssistant, config: ResolvedConfig): Discovery
   const kindRank = (e: DiscoveredEntity) => (e.isGroup ? 0 : e.kind === 'light' ? 1 : e.kind === 'outlet' ? 2 : 3);
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
-  // Room order: an explicit `areas` list wins; otherwise follow HA's floor order, then its area order.
+  // Floors go from the lowest up, whatever order Home Assistant keeps them in.
+  const floorIds = sortFloors(Object.values(floors).map((f) => ({ id: f.floor_id, level: f.level ?? null }))).map(
+    (f) => f.id,
+  );
+
+  // Room order: an explicit `areas` list wins; otherwise the floors in that order, then HA's area order.
   let areaOrder: string[];
   if (config.areas.length) {
     areaOrder = config.areas.filter((id) => areas[id]);
   } else {
     const all = Object.keys(areas);
-    const floorIds = Object.keys(floors);
     areaOrder = [
       ...floorIds.flatMap((floorId) => all.filter((id) => areas[id].floor_id === floorId)),
       ...all.filter((id) => !areas[id].floor_id || !floors[areas[id].floor_id!]),
@@ -312,7 +317,7 @@ export function discover(hass: HomeAssistant, config: ResolvedConfig): Discovery
   }
 
   const floorList: Floor[] = [];
-  for (const floor of Object.values(floors)) {
+  for (const floor of floorIds.map((id) => floors[id])) {
     const floorRooms = rooms.filter((r) => r.floorId === floor.floor_id).map((r) => r.id);
     if (floorRooms.length) {
       floorList.push({

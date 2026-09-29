@@ -6,7 +6,7 @@ import { launchBrowser, startServer } from './static-server.mjs';
 const OUT = 'docs/images';
 
 const tile = (name) => ({ tile: name });
-const tab = (index) => ({ click: `light-control-card nav.tabs .tab >> nth=${index}` });
+const tab = (name) => ({ click: `light-control-card nav.tabs .tab[aria-label="${name}"]` });
 
 const shots = [
   {
@@ -28,7 +28,7 @@ const shots = [
     file: 'floor.png',
     query: '&theme=dark&sky=night',
     width: 1200,
-    actions: [tab(1)],
+    actions: [tab('Ground Floor')],
     target: '#card-slot',
     clipHeight: 760,
   },
@@ -37,7 +37,7 @@ const shots = [
     file: 'room.png',
     query: '&theme=dark&sky=night',
     width: 1200,
-    actions: [{ click: 'light-control-card article.room .room-title >> nth=0' }],
+    actions: [{ click: 'light-control-card article.room .room-title:has-text("Living Room")' }],
     target: '#card-slot',
   },
   {
@@ -50,7 +50,7 @@ const shots = [
     file: 'upstairs-day.png',
     query: '&theme=light&sky=day',
     width: 1200,
-    actions: [tab(2)],
+    actions: [tab('Upstairs')],
     target: 'light-control-card .hero',
   },
   {

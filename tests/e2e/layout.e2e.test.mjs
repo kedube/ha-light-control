@@ -41,11 +41,11 @@ describe('Layout', () => {
   it('sets rooms side by side on a wide card, still in Home Assistant order', async () => {
     const page = await open({ width: 390 });
     const order = await page.locator('article.room .room-name').allTextContents();
-    assert.equal(await page.locator('section.floor').first().locator('.column').count(), 1);
+    const ground = page.locator('section.floor[aria-label="Ground Floor"]');
+    assert.equal(await ground.locator('.column').count(), 1);
 
     await page.evaluate(() => (document.getElementById('stage').style.width = '1100px'));
     await page.setViewportSize({ width: 1200, height: 900 });
-    const ground = page.locator('section.floor').first();
     await ground.locator('.column').nth(2).waitFor();
     assert.equal(await ground.locator('.column').count(), 3);
     // Read top to bottom, a column at a time, the rooms keep their order.

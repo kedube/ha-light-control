@@ -297,6 +297,12 @@ export function groundLevel(levels: readonly number[]): number {
   return above.length ? Math.min(...above) : Math.max(...levels);
 }
 
+/** Floors from the lowest to the highest, as the card lists them. Floors on one level keep their order. */
+export function sortFloors<T extends { id: string; level: number | null }>(floors: readonly T[]): T[] {
+  const levels = floorLevels(floors);
+  return [...floors].sort((a, b) => levels.get(a.id)! - levels.get(b.id)!);
+}
+
 interface StoryInput {
   id: string;
   rank: number;

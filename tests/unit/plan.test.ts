@@ -6,6 +6,7 @@ import {
   GROUND_ID,
   groundLevel,
   planHouse,
+  sortFloors,
   STAIRS_WIDTH,
   type HousePlan,
   type PlanFloorInput,
@@ -188,6 +189,26 @@ describe('planHouse', () => {
     );
     assert.equal(groundLevel([-1, 2, 3]), 2);
     assert.equal(groundLevel([-2, -1]), -1);
+  });
+
+  it('sorts floors from the lowest up, keeping the list order where it cannot tell', () => {
+    const ids = (floors: { id: string; level: number | null }[]) => sortFloors(floors).map((f) => f.id);
+    assert.deepEqual(
+      ids([
+        { id: 'attic', level: null },
+        { id: 'up', level: 1 },
+        { id: 'ground', level: 0 },
+        { id: 'basement', level: -1 },
+      ]),
+      ['basement', 'ground', 'up', 'attic'],
+    );
+    assert.deepEqual(
+      ids([
+        { id: 'b', level: null },
+        { id: 'a', level: null },
+      ]),
+      ['b', 'a'],
+    );
   });
 
   it('copes with no rooms at all', () => {

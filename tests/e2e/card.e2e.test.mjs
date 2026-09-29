@@ -46,9 +46,14 @@ const waitForState = (page, entityId, predicate) =>
 describe('Light Control Card in a browser', () => {
   it('discovers rooms, groups them by floor and leaves out the clutter', async () => {
     const page = await open();
+    // Floors run from the lowest up, in the list and over the house, whatever order HA keeps them in.
     const floors = await page.locator('.floor-head .floor-name').allTextContents();
-    assert.deepEqual(floors, ['Ground Floor', 'Upstairs', 'Basement', 'Outside', 'Other']);
-    const ground = await page.locator('section.floor').first().locator('.room-name').allTextContents();
+    assert.deepEqual(floors, ['Basement', 'Ground Floor', 'Upstairs', 'Outside', 'Other']);
+    const tabs = await page
+      .locator('nav.tabs [role=tab]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')));
+    assert.deepEqual(tabs, ['Home', 'Basement', 'Ground Floor', 'Upstairs', 'Outside']);
+    const ground = await page.locator('section.floor[aria-label="Ground Floor"] .room-name').allTextContents();
     assert.deepEqual(ground, ['Living Room', 'Kitchen', 'Dining Room', 'Hallway', 'Garage']);
     const names = await page.locator('lc-tile .name').allTextContents();
     for (const hidden of ['Kitchen Switch LED', 'Old Bulb', 'Spare', 'Desktop PC', 'Garage Door Light Sync']) {

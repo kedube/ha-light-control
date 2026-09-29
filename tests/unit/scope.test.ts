@@ -20,6 +20,28 @@ describe('floorGroups', () => {
     );
   });
 
+  it('lists floors from the lowest up, whatever order Home Assistant keeps them in', () => {
+    const hass = home({
+      floors: [
+        { floor_id: 'upstairs', name: 'Upstairs', level: 1 },
+        { floor_id: 'ground', name: 'Ground Floor', level: 0 },
+      ],
+    });
+    const discovery = discover(hass, config());
+    assert.deepEqual(
+      discovery.floors.map((f) => f.id),
+      ['ground', 'upstairs'],
+    );
+    assert.deepEqual(
+      floorGroups(discovery, names).map((g) => g.id),
+      ['ground', 'upstairs', OUTSIDE, UNASSIGNED],
+    );
+    assert.deepEqual(
+      discovery.rooms.map((r) => r.id),
+      ['living_room', 'kitchen', 'bedroom', 'garden', UNASSIGNED],
+    );
+  });
+
   it('puts every room in one group when the home has no floors', () => {
     const hass = home({ floors: [] });
     const groups = floorGroups(discover(hass, config()), names);

@@ -1,5 +1,5 @@
 // The card shows the whole home, one floor, the outdoors or a single room. This module decides
-// which rooms belong to each of those, in the order Home Assistant lists them.
+// which rooms belong to each of those: floors from the lowest up, rooms in Home Assistant's order.
 
 import { UNASSIGNED, type Discovery, type Room } from './discovery.ts';
 import { floorLevels, GROUND_ID, groundLevel } from './house/plan.ts';
@@ -42,7 +42,7 @@ function groundFloor(floors: Discovery['floors']): string | undefined {
 }
 
 /**
- * Floors with their indoor rooms (in Home Assistant order), then the outdoors, then entities
+ * Floors with their indoor rooms, from the lowest floor up, then the outdoors, then entities
  * without an area. Rooms without a floor join the ground floor, as they do in the 3D house.
  */
 export function floorGroups(discovery: Discovery, names: { inside: string; outside: string }): FloorGroup[] {
