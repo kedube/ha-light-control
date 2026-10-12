@@ -116,4 +116,8 @@ export const nl: Translation = {
   cfg_live_brightness: 'Lampen bijwerken tijdens het schuiven',
   help_live_brightness:
     'Verstuurt de helderheid een paar keer per seconde tijdens het slepen. Laat uit bij trage Zigbee-netwerken.',
+
+  // Home Assistant's card picker
+  card_description:
+    'Al je lampen en slimme stopcontacten, automatisch gevonden en per ruimte gegroepeerd. Tik, schuif en geef ze kleur.',
 };

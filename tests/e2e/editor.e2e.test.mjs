@@ -39,6 +39,7 @@ describe('Visual editor', () => {
     assert.equal(data.show_house, false, 'value from the config');
     assert.equal(data.show_outlets, true, 'default shown as on');
     assert.equal(data.outlet_detection, 'smart');
+    assert.equal(data.title, 'Lumières', 'default title in the user’s language');
   });
 
   it('labels fields and sections in the user’s language', async () => {
@@ -58,7 +59,7 @@ describe('Visual editor', () => {
       (f) => {
         f.dispatchEvent(
           new CustomEvent('value-changed', {
-            detail: { value: { ...f.data, show_scenes: false, areas: [], title: 'Lights' } },
+            detail: { value: { ...f.data, show_scenes: false, areas: [] } },
           }),
         );
         return window.__lastConfig;

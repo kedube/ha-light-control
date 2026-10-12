@@ -143,4 +143,8 @@ export const pl: Translation = {
   cfg_live_brightness: 'Aktualizuj światła podczas przesuwania',
   help_live_brightness:
     'Wysyła jasność kilka razy na sekundę podczas przeciągania. Zostaw wyłączone w wolnych sieciach Zigbee.',
+
+  // Home Assistant's card picker
+  card_description:
+    'Wszystkie światła i inteligentne gniazdka, wykryte automatycznie i pogrupowane według pomieszczeń. Stuknij, przesuń i pokoloruj.',
 };

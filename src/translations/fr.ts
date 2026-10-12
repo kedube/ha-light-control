@@ -116,4 +116,8 @@ export const fr: Translation = {
   cfg_live_brightness: 'Mettre à jour pendant le glissement',
   help_live_brightness:
     'Envoie la luminosité plusieurs fois par seconde pendant le glissement. À laisser désactivé sur les réseaux Zigbee lents.',
+
+  // Home Assistant's card picker
+  card_description:
+    'Toutes vos lumières et prises connectées, détectées automatiquement et regroupées par pièce. Touchez, glissez, colorez.',
 };

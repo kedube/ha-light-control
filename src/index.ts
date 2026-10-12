@@ -1,5 +1,6 @@
 import { LightControlCardEditor } from './editor.ts';
 import { LightControlCard } from './light-control-card.ts';
+import { resolveLanguage, t } from './localize.ts';
 
 declare const __VERSION__: string;
 
@@ -21,11 +22,14 @@ if (!customElements.get('light-control-card')) {
   customElements.define('light-control-card', LightControlCard);
   customElements.define('light-control-card-editor', LightControlCardEditor);
 
+  // The card picker lists cards before any of them has seen hass, so it follows the page
+  // language that Home Assistant sets on <html>.
+  const language = resolveLanguage(document.documentElement.lang || navigator.language);
   window.customCards = window.customCards ?? [];
   window.customCards.push({
     type: 'light-control-card',
     name: 'Light Control Card',
-    description: 'Every light and smart plug, found automatically and grouped by room. Tap, slide and color them.',
+    description: t('card_description', undefined, language),
     preview: true,
     documentationURL: 'https://github.com/kedube/ha-light-control',
   });

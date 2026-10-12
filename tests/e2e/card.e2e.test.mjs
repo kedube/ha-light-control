@@ -243,6 +243,7 @@ describe('Light Control Card in a browser', () => {
   it('speaks the user’s language', async () => {
     const page = await open('&lang=de');
     await tab(page, 'Zuhause').waitFor();
+    assert.equal(await page.locator('.hero-head h1').textContent(), 'Lichter', 'default title');
     assert.equal(await page.locator('.control.lights .control-name').textContent(), 'Lichter');
     assert.equal(await page.locator('.control.outlets .control-name').textContent(), 'Steckdosen');
     await page.close();

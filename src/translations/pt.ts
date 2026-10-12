@@ -116,4 +116,8 @@ export const pt: Translation = {
   cfg_live_brightness: 'Atualizar as luzes ao deslizar',
   help_live_brightness:
     'Envia o brilho algumas vezes por segundo enquanto você arrasta. Deixe desativado em redes Zigbee lentas.',
+
+  // Home Assistant's card picker
+  card_description:
+    'Todas as luzes e tomadas inteligentes, encontradas automaticamente e agrupadas por ambiente. Toque, deslize e dê cor.',
 };

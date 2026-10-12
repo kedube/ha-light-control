@@ -23,6 +23,7 @@ describe('config', () => {
     assert.equal(c.show_outlets, true);
     assert.equal(c.outlet_detection, 'smart');
     assert.equal(c.title, '');
+    assert.equal(resolveConfig({ type: 'x' }).title, undefined, 'the card translates the default title');
   });
 
   it('rejects bad values with a readable message', () => {

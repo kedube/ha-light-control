@@ -185,7 +185,7 @@ export class LightControlCardEditor extends LitElement {
   protected override render() {
     if (!this.hass || !this._config || !this._ready) return nothing;
     setLanguage(this.hass.locale?.language ?? this.hass.language);
-    const data = { ...FORM_DEFAULTS, ...this._config };
+    const data = { ...FORM_DEFAULTS, ...this._config, title: this._config.title ?? t('lights') };
     return html`
       <p class="intro">${t('editor_intro')}</p>
       <ha-form
@@ -204,9 +204,10 @@ export class LightControlCardEditor extends LitElement {
     const value = ev.detail.value;
     const config: Record<string, unknown> = { type: this._config!.type };
     // The form always shows a title, so an emptied field (sent as undefined) means "no title".
+    // The default stays out of the YAML, so it keeps following the user's language.
     const title = value.title;
     if (title === undefined || title === null || title === '') config.title = '';
-    else if (title !== FORM_DEFAULTS.title) config.title = title;
+    else if (title !== t('lights')) config.title = title;
     for (const [key, v] of Object.entries(value)) {
       if (key === 'type' || key === 'title' || v === undefined || v === null) continue;
       if (Array.isArray(v) && !v.length) continue;

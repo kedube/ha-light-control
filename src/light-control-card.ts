@@ -282,10 +282,11 @@ export class LightControlCard extends LitElement {
     const houseRooms = config.show_house ? this.houseRooms(discovery) : [];
     const withHouse = houseRooms.length > 0;
     const tabs = this.renderTabs(groups, scope, withHouse);
-    const hasText = Boolean(config.title || config.show_summary);
+    const title = config.title ?? t('lights');
+    const hasText = Boolean(title || config.show_summary);
     const head = hasText
       ? html`<div class="hero-head">
-          ${config.title ? html`<h1>${config.title}</h1>` : nothing}
+          ${title ? html`<h1>${title}</h1>` : nothing}
           ${config.show_summary ? html`<div class="summary">${phrases(this.summaryParts(all))}</div>` : nothing}
         </div>`
       : nothing;
@@ -889,7 +890,7 @@ export class LightControlCard extends LitElement {
         type: 'scope',
         key: scope.kind === 'floor' ? `floor:${scope.id}` : 'home',
         eyebrow: group ? t('floor_controls') : t('home_controls'),
-        title: group?.name || this._config!.title || t('home'),
+        title: group?.name || (this._config!.title ?? t('lights')) || t('home'),
         rooms,
         scenes: [],
       };

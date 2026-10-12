@@ -113,4 +113,8 @@ export const it: Translation = {
   cfg_live_brightness: 'Aggiorna le luci durante il trascinamento',
   help_live_brightness:
     'Invia la luminosità più volte al secondo mentre trascini. Lascialo disattivato sulle reti Zigbee lente.',
+
+  // Home Assistant's card picker
+  card_description:
+    'Tutte le luci e le prese smart, trovate automaticamente e raggruppate per stanza. Tocca, scorri e colora.',
 };

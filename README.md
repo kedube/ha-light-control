@@ -140,7 +140,7 @@ All options are optional.
 
 | Option              | Default  | Description                                                                                                                                |
 | ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `title`             | `Lights` | Card title. Set to `""` to hide it.                                                                                                        |
+| `title`             | `Lights` | Card title, in each person's language unless you set your own. Set to `""` to hide it.                                                     |
 | `show_house`        | `true`   | Show the 3D house.                                                                                                                         |
 | `show_summary`      | `true`   | Show the status line under the title.                                                                                                      |
 | `show_room_filter`  | `true`   | Show the switcher for the whole home, each floor and the outdoors.                                                                         |

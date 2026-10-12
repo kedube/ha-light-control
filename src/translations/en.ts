@@ -125,6 +125,9 @@ export const en = {
   opt_tap_more_info: "Open Home Assistant's more-info dialog",
   cfg_live_brightness: 'Update lights while sliding',
   help_live_brightness: 'Sends brightness a few times per second while you drag. Leave off on slow Zigbee networks.',
+
+  // Home Assistant's card picker
+  card_description: 'Every light and smart plug, found automatically and grouped by room. Tap, slide and color them.',
 };
 
 export type TranslationKey = keyof typeof en;

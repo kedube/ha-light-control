@@ -116,4 +116,8 @@ export const de: Translation = {
   cfg_live_brightness: 'Lichter beim Schieben live anpassen',
   help_live_brightness:
     'Sendet die Helligkeit mehrmals pro Sekunde während des Ziehens. Bei langsamen Zigbee-Netzen aus lassen.',
+
+  // Home Assistant's card picker
+  card_description:
+    'Alle Lichter und smarten Steckdosen, automatisch gefunden und nach Räumen gruppiert. Tippen, schieben und einfärben.',
 };

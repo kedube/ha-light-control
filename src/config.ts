@@ -33,12 +33,12 @@ export interface LightControlCardConfig {
 }
 
 export type ResolvedConfig = Required<Omit<LightControlCardConfig, 'title' | 'unassigned_name'>> & {
-  title: string;
+  /** Undefined means the default title, "Lights" in the user's language; '' hides it. */
+  title?: string;
   unassigned_name?: string;
 };
 
 export const DEFAULTS: Omit<ResolvedConfig, 'type'> = {
-  title: 'Lights',
   show_house: true,
   show_summary: true,
   show_room_filter: true,
@@ -116,7 +116,7 @@ export function resolveConfig(raw: LightControlCardConfig): ResolvedConfig {
     ...DEFAULTS,
     ...raw,
     ...lists,
-    title: typeof raw.title === 'string' ? raw.title : DEFAULTS.title,
+    title: typeof raw.title === 'string' ? raw.title : undefined,
   } as ResolvedConfig;
 }
 
