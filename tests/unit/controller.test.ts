@@ -216,4 +216,25 @@ describe('LightController', () => {
     await settle();
     assert.equal(controller.view('light.living_room_ceiling', 'light')!.on, false);
   });
+
+  it('keeps a newer optimistic change when an earlier command fails', async () => {
+    const { controller } = setup();
+    let rejectFirst: (reason: Error) => void = () => {};
+    let calls = 0;
+    controller.hass!.callService = () => {
+      calls++;
+      return calls === 1
+        ? new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          })
+        : Promise.resolve();
+    };
+
+    const first = controller.setBrightness(['light.living_room_ceiling'], 30);
+    await controller.setBrightness(['light.living_room_ceiling'], 70);
+    rejectFirst(new Error('Older command failed'));
+    await first;
+
+    assert.equal(controller.view('light.living_room_ceiling', 'light')!.brightness, 70);
+  });
 });

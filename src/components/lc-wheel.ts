@@ -10,6 +10,7 @@ export interface PickDetail {
   hs?: [number, number];
   kelvin?: number;
   final: boolean;
+  cancelled?: boolean;
 }
 
 interface Point {
@@ -90,7 +91,7 @@ export class LcWheel extends LitElement {
         @pointerdown=${this.onDown}
         @pointermove=${this.onMove}
         @pointerup=${this.onUp}
-        @pointercancel=${this.onUp}
+        @pointercancel=${this.onCancel}
         @keydown=${this.onKey}
       >
         <canvas></canvas>
@@ -179,6 +180,13 @@ export class LcWheel extends LitElement {
     this._drag = undefined;
     haptic('selection');
     fireEvent<PickDetail>(this, 'lc-pick', detail);
+  };
+
+  private onCancel = (ev: PointerEvent): void => {
+    if (ev.pointerId !== this.pointerId) return;
+    this.pointerId = undefined;
+    this._drag = undefined;
+    fireEvent<PickDetail>(this, 'lc-pick', { final: false, cancelled: true });
   };
 
   private onKey = (ev: KeyboardEvent): void => {

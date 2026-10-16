@@ -98,7 +98,7 @@ export class LcSheet extends LitElement {
   declare _dragY: number;
 
   private swipe?: { pointerId: number; y: number };
-  private historyFor?: string;
+  private historyRequest = 0;
   /** The target the dialog was opened for; re-renders while it closes must not reopen it. */
   private openedFor?: string;
   private pressedBackdrop = false;
@@ -119,6 +119,7 @@ export class LcSheet extends LitElement {
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has('target') && !this.target) this.historyRequest++;
     if (changed.has('target') && this.target) {
       const previous = changed.get('target') as SheetTarget | null | undefined;
       if (!previous || targetKey(previous) !== targetKey(this.target)) this.resetFor(this.target);
@@ -153,11 +154,13 @@ export class LcSheet extends LitElement {
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.historyRequest++;
     clearTimeout(this.confirmTimer);
     this._confirmOff = false;
   }
 
   private resetFor(target: SheetTarget): void {
+    this.historyRequest++;
     clearTimeout(this.confirmTimer);
     this._confirmOff = false;
     this._preview = {};
@@ -426,7 +429,11 @@ export class LcSheet extends LitElement {
   }
 
   private onPick(ev: CustomEvent<PickDetail>, ids: string[], kelvinIds = ids): void {
-    const { hs, kelvin, final } = ev.detail;
+    const { hs, kelvin, final, cancelled } = ev.detail;
+    if (cancelled) {
+      this._preview = { ...this._preview, rgb: undefined };
+      return;
+    }
     if (final) {
       this._preview = { ...this._preview, rgb: undefined };
       if (hs) this.controller.setHs(ids, hs);
@@ -523,7 +530,7 @@ export class LcSheet extends LitElement {
   }
 
   private async loadHistory(sensorId: string): Promise<void> {
-    this.historyFor = sensorId;
+    const request = ++this.historyRequest;
     if (!this.hass?.callWS) return;
     const end = new Date();
     const start = new Date(end.getTime() - DAY_MS);
@@ -536,12 +543,12 @@ export class LcSheet extends LitElement {
         minimal_response: true,
         no_attributes: true,
       });
-      if (this.historyFor !== sensorId) return;
+      if (request !== this.historyRequest) return;
       this._history = (result[sensorId] ?? [])
         .map((row) => ({ t: row.lu * 1000, v: Number.parseFloat(row.s) }))
         .filter((p) => Number.isFinite(p.v));
     } catch {
-      this._history = undefined;
+      if (request === this.historyRequest) this._history = undefined;
     }
   }
 

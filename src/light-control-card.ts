@@ -5,6 +5,7 @@ import { accentFor, rgbTriplet, WARM_GLOW } from './color.ts';
 import { resolveConfig, type LightControlCardConfig, type ResolvedConfig } from './config.ts';
 import { LightController } from './controller.ts';
 import { discover, UNASSIGNED, type DiscoveredEntity, type Discovery, type Room } from './discovery.ts';
+import type { EntityView } from './entity-model.ts';
 import { outletStyleFor, type OutletStyle } from './graphics.ts';
 import type { HomeAssistant } from './ha-types.ts';
 import { fixtureKind } from './house/scene.ts';
@@ -79,6 +80,7 @@ export class LightControlCard extends LitElement {
   declare _confirm: string | null;
 
   private readonly controller = new LightController(this);
+  private readonly viewCache = new Map<string, EntityView | undefined>();
   private discovery?: Discovery;
   private discoveryKey: unknown[] = [];
   private resizeObserver?: ResizeObserver;
@@ -228,6 +230,7 @@ export class LightControlCard extends LitElement {
 
   protected override render() {
     if (!this._config || !this.hass) return nothing;
+    this.viewCache.clear();
     const discovery = this.getDiscovery();
     const groups = floorGroups(discovery, { inside: t('inside'), outside: t('outside') });
     const scope = validScope(groups, this._scope);
@@ -257,7 +260,12 @@ export class LightControlCard extends LitElement {
     `;
   }
 
-  private viewOf = (entity: DiscoveredEntity) => this.controller.view(entity.entityId, entity.kind);
+  private viewOf = (entity: DiscoveredEntity): EntityView | undefined => {
+    if (!this.viewCache.has(entity.entityId)) {
+      this.viewCache.set(entity.entityId, this.controller.view(entity.entityId, entity.kind));
+    }
+    return this.viewCache.get(entity.entityId);
+  };
 
   private get outletStyle(): OutletStyle {
     return outletStyleFor(this.hass?.config?.country);

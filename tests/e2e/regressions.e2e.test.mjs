@@ -36,6 +36,71 @@ const tile = (page, name) =>
 const state = (page, id) => page.evaluate((entityId) => window.__demo.hass.states[entityId], id);
 
 describe('Regressions', () => {
+  it('does not apply a color when the pointer gesture is canceled', async () => {
+    const { page, context } = await open();
+    const finals = await page.evaluate(async () => {
+      const wheel = document.createElement('lc-wheel');
+      wheel.mode = 'hs';
+      document.body.append(wheel);
+      await wheel.updateComplete;
+      const picked = [];
+      wheel.addEventListener('lc-pick', (ev) =>
+        picked.push(ev.detail.cancelled ? 'cancelled' : ev.detail.final ? 'final' : 'preview'),
+      );
+      const target = wheel.shadowRoot.querySelector('.wheel');
+      target.setPointerCapture = () => {};
+      const rect = target.getBoundingClientRect();
+      const event = (type) =>
+        target.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            pointerId: 7,
+            pointerType: 'touch',
+            clientX: rect.left + rect.width / 2,
+            clientY: rect.top + rect.height / 2,
+          }),
+        );
+      event('pointerdown');
+      event('pointercancel');
+      wheel.remove();
+      return picked;
+    });
+    assert.deepEqual(finals, ['preview', 'cancelled']);
+    await context.close();
+  });
+
+  it('keeps the current plug history when an older request fails', async () => {
+    const { page, context } = await open();
+    await page.evaluate(() => {
+      window.__historyPending = [];
+      window.__demo.hass.callWS = (msg) =>
+        new Promise((resolve, reject) => window.__historyPending.push({ msg, resolve, reject }));
+    });
+    await tile(page, 'TV Plug').locator('.tile').click({ button: 'right' });
+    await page.waitForFunction(() => window.__historyPending.length === 1);
+    await page.locator('lc-sheet dialog[open] button[aria-label="Close"]').click();
+    await tile(page, 'Monitor Plug').locator('.tile').click({ button: 'right' });
+    await page.waitForFunction(() => window.__historyPending.length === 2);
+    await page.evaluate(() => {
+      const pending = window.__historyPending;
+      const sensorId = pending[1].msg.entity_ids[0];
+      const now = Date.now() / 1000;
+      pending[1].resolve({
+        [sensorId]: [
+          { s: '20', lu: now - 3600 },
+          { s: '25', lu: now },
+        ],
+      });
+    });
+    await page.locator('lc-sheet dialog[open] .spark svg').waitFor();
+    await page.evaluate(async () => {
+      window.__historyPending[0].reject(new Error('Old request failed'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    assert.equal(await page.locator('lc-sheet dialog[open] .spark svg').count(), 1);
+    await context.close();
+  });
+
   it('dims with a finger drag that starts on the tile text', async () => {
     const { page, context } = await open({ touch: true });
     await tile(page, 'Floor Lamp').scrollIntoViewIfNeeded();

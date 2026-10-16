@@ -246,18 +246,27 @@ export class LightController {
     for (const id of entityIds) {
       const domain = computeDomain(id);
       const serviceDomain = domain === 'light' || domain === 'switch' ? domain : 'homeassistant';
-      byDomain.set(serviceDomain, [...(byDomain.get(serviceDomain) ?? []), id]);
+      const ids = byDomain.get(serviceDomain);
+      if (ids) ids.push(id);
+      else byDomain.set(serviceDomain, [id]);
     }
-    const calls = [...byDomain].map(([domain, ids]) =>
-      hass
+    const calls = [...byDomain].map(([domain, ids]) => {
+      const sentOverrides = ids.map((id) => this.overrides.get(id));
+      return hass
         .callService(domain, service, { entity_id: ids, ...(domain === 'light' ? data : {}) })
         .catch((err: unknown) => {
-          // Drop the optimistic state so the tile shows what HA really reports.
-          for (const id of ids) this.overrides.delete(id);
-          this.host.requestUpdate();
+          // A newer command may already have replaced this optimistic state.
+          let changed = false;
+          ids.forEach((id, i) => {
+            if (sentOverrides[i] && this.overrides.get(id) === sentOverrides[i]) {
+              this.overrides.delete(id);
+              changed = true;
+            }
+          });
+          if (changed) this.host.requestUpdate();
           throw err;
-        }),
-    );
+        });
+    });
     return Promise.allSettled(calls);
   }
 }
