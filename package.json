@@ -26,10 +26,10 @@
   },
   "devDependencies": {
     "@mdi/js": "^7.4.47",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
-    "playwright-core": "^1.63.0",
-    "prettier": "^3.9.9",
+    "playwright-core": "^1.64.1",
+    "prettier": "^3.9.10",
     "typescript": "^7.0.2"
   },
   "engines": {
