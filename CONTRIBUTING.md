@@ -104,7 +104,7 @@ Built files are never committed; HACS installs the file attached to each release
 
 HACS validation also checks settings that live on GitHub rather than in the code:
 
-- A repository description, for example _Home Assistant card that finds your lights and smart plugs and groups them by room_.
+- A repository description. HACS shows it in its listing, so keep it in sync with the one below.
 - Topics, for example `home-assistant`, `hacs`, `lovelace`, `lovelace-custom-card`, `dashboard`, `lights`.
 - Issues enabled.
 
@@ -112,7 +112,7 @@ With the GitHub CLI:
 
 ```sh
 gh repo edit kedube/ha-light-control \
-  --description "Home Assistant card that finds your lights and smart plugs and groups them by room" \
+  --description "Home Assistant dashboard card that automatically finds every light and smart plug and displays them in a 3D model of your house, with rooms that glow in each light's actual color and separate light and outlet controls for each room and floor." \
   --add-topic home-assistant --add-topic hacs --add-topic lovelace \
   --add-topic lovelace-custom-card --add-topic dashboard --add-topic lights \
   --enable-issues

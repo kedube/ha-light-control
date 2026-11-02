@@ -1,6 +1,6 @@
 # Light Control Card
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://hacs.xyz)
 [![Latest release](https://img.shields.io/badge/dynamic/xml?url=https%3A%2F%2Fgithub.com%2Fkedube%2Fha-light-control%2Freleases.atom&query=%2F%2F%2A%5Blocal-name%28%29%3D%27entry%27%5D%5B1%5D%2F%2A%5Blocal-name%28%29%3D%27title%27%5D&label=release&color=blue)](https://github.com/kedube/ha-light-control/releases/latest)
 [![Release workflow](https://github.com/kedube/ha-light-control/actions/workflows/release.yml/badge.svg)](https://github.com/kedube/ha-light-control/actions/workflows/release.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/kedube/ha-light-control)](LICENSE)
@@ -50,8 +50,8 @@ Every light and outlet in your home, found automatically and shown in a 3D model
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=kedube&repository=ha-light-control&category=plugin)
 
-1. Select the button above. Alternatively, open **HACS**, open the **⋮** menu, choose **Custom repositories**, and add `https://github.com/kedube/ha-light-control` with the type **Dashboard**.
-2. Search for **Light Control Card** and select **Download**.
+1. Open **HACS** and search for **Light Control Card**, or select the button above to go straight to it.
+2. Select **Download**.
 3. Reload the browser. In the companion app, clear the frontend cache from **Settings → Companion app → Debugging**.
 
 HACS registers the dashboard resource for you and offers updates whenever a new version is released.
