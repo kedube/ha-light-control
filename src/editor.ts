@@ -1,6 +1,8 @@
 import { LitElement, css, html, nothing } from 'lit';
-import { DEFAULTS, resolveConfig, type LightControlCardConfig } from './config.ts';
+import type { RGB } from './color.ts';
+import { COLOR_KEYS, DEFAULTS, parseColor, resolveConfig, type LightControlCardConfig } from './config.ts';
 import type { HomeAssistant } from './ha-types.ts';
+import { STYLE_NAMES, STYLES, styleFor, type StyleName } from './house/materials.ts';
 import { setLanguage, t, TRANSLATIONS, type StringKey } from './localize.ts';
 import { fireEvent } from './utils.ts';
 
@@ -25,7 +27,6 @@ function buildSchema(): Schema[] {
           type: 'grid',
           flatten: true,
           schema: [
-            { name: 'show_house', selector: { boolean: {} } },
             { name: 'show_summary', selector: { boolean: {} } },
             { name: 'show_room_filter', selector: { boolean: {} } },
             { name: 'show_scenes', selector: { boolean: {} } },
@@ -39,6 +40,46 @@ function buildSchema(): Schema[] {
             ['entity', 'opt_icon_entity'],
           ]),
         },
+      ],
+    },
+    {
+      name: 'house',
+      type: 'expandable',
+      flatten: true,
+      title: t('section_house'),
+      icon: 'mdi:home-variant-outline',
+      schema: [
+        { name: 'show_house', selector: { boolean: {} } },
+        {
+          name: 'house_style',
+          selector: select([
+            ['auto', 'opt_style_auto'],
+            ...STYLE_NAMES.map((name) => [name, `opt_style_${name}`] as [string, StringKey]),
+          ]),
+        },
+        {
+          name: 'house_colors',
+          type: 'grid',
+          flatten: true,
+          schema: COLOR_KEYS.map((name) => ({ name, selector: { color_rgb: {} } })),
+        },
+        {
+          name: 'house_facing',
+          selector: select([
+            ['auto', 'opt_facing_auto'],
+            ['n', 'opt_facing_n'],
+            ['ne', 'opt_facing_ne'],
+            ['e', 'opt_facing_e'],
+            ['se', 'opt_facing_se'],
+            ['s', 'opt_facing_s'],
+            ['sw', 'opt_facing_sw'],
+            ['w', 'opt_facing_w'],
+            ['nw', 'opt_facing_nw'],
+          ]),
+        },
+        { name: 'animate_sky', selector: { boolean: {} } },
+        { name: 'sky_weather', selector: { boolean: {} } },
+        { name: 'weather_entity', selector: { entity: { filter: [{ domain: 'weather' }] } } },
       ],
     },
     {
@@ -120,6 +161,10 @@ function buildSchema(): Schema[] {
 }
 
 const HELPERS: Record<string, StringKey> = {
+  door_color: 'help_house_color',
+  animate_sky: 'help_animate_sky',
+  house_facing: 'help_house_facing',
+  weather_entity: 'help_weather_entity',
   outlet_detection: 'help_outlet_detection',
   areas: 'help_areas',
   exclude_patterns: 'help_exclude_patterns',
@@ -133,6 +178,13 @@ const label = (name: string): string => {
 
 /** Keys the form toggles; used to show defaults and keep saved YAML minimal. */
 const FORM_DEFAULTS = DEFAULTS as unknown as Record<string, unknown>;
+
+/** The colors a style gives the house, which the color fields show until the user picks their own. */
+function styleColors(style: unknown, country?: string | null): Record<(typeof COLOR_KEYS)[number], RGB> {
+  const name = typeof style === 'string' && style in STYLES ? (style as StyleName) : styleFor(country);
+  const s = STYLES[name];
+  return { house_color: s.wall.color, roof_color: s.roof.color, trim_color: s.trim, door_color: s.door };
+}
 
 declare global {
   interface Window {
@@ -185,7 +237,10 @@ export class LightControlCardEditor extends LitElement {
   protected override render() {
     if (!this.hass || !this._config || !this._ready) return nothing;
     setLanguage(this.hass.locale?.language ?? this.hass.language);
-    const data = { ...FORM_DEFAULTS, ...this._config, title: this._config.title ?? t('lights') };
+    const config = this._config as unknown as Record<string, unknown>;
+    const colors: Record<string, RGB> = styleColors(config.house_style, this.hass.config?.country);
+    for (const key of COLOR_KEYS) colors[key] = parseColor(config[key]) ?? colors[key];
+    const data = { ...FORM_DEFAULTS, ...this._config, ...colors, title: this._config.title ?? t('lights') };
     return html`
       <p class="intro">${t('editor_intro')}</p>
       <ha-form
@@ -208,10 +263,13 @@ export class LightControlCardEditor extends LitElement {
     const title = value.title;
     if (title === undefined || title === null || title === '') config.title = '';
     else if (title !== t('lights')) config.title = title;
+    // A color that is the style's own stays out of the YAML, so it follows the style if that changes.
+    const own: Record<string, RGB> = styleColors(value.house_style, this.hass?.config?.country);
     for (const [key, v] of Object.entries(value)) {
       if (key === 'type' || key === 'title' || v === undefined || v === null) continue;
+      if (key in own && JSON.stringify(parseColor(v)) === JSON.stringify(own[key])) continue;
       if (Array.isArray(v) && !v.length) continue;
-      if (key === 'unassigned_name' && v === '') continue;
+      if ((key === 'unassigned_name' || key === 'weather_entity') && v === '') continue;
       if (JSON.stringify(v) === JSON.stringify(FORM_DEFAULTS[key])) continue;
       config[key] = v;
     }

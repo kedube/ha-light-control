@@ -643,8 +643,8 @@ function renderPlug(spec: PlugSpec): HassEntity {
 
 function sunState(mode: 'day' | 'dusk' | 'night'): HassEntity {
   const table = {
-    day: { state: 'above_horizon', elevation: 38, azimuth: 150 },
-    dusk: { state: 'above_horizon', elevation: 2.5, azimuth: 262 },
+    day: { state: 'above_horizon', elevation: 41, azimuth: 228 },
+    dusk: { state: 'above_horizon', elevation: 2.5, azimuth: 256 },
     night: { state: 'below_horizon', elevation: -24, azimuth: 318 },
   }[mode];
   return {
@@ -886,6 +886,18 @@ boot();
 hass = buildHass();
 
 let cardConfig: Record<string, unknown> = { type: 'custom:light-control-card' };
+// A design and colors for the house can be tried from the address bar: ?style=tudor&wall=8899aa
+for (const [param, option] of [
+  ['style', 'house_style'],
+  ['facing', 'house_facing'],
+  ['wall', 'house_color'],
+  ['roof', 'roof_color'],
+  ['trim', 'trim_color'],
+  ['door', 'door_color'],
+]) {
+  const value = params.get(param);
+  if (value) cardConfig[option] = /^[0-9a-f]{6}$/i.test(value) ? `#${value}` : value;
+}
 
 async function mount() {
   await customElements.whenDefined('light-control-card');

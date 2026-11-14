@@ -65,6 +65,7 @@ export interface FloorRegistryEntry {
 
 export interface HassConfig {
   country?: string | null;
+  latitude?: number;
   language?: string;
   unit_system?: Record<string, string>;
 }

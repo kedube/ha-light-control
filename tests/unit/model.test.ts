@@ -32,6 +32,33 @@ describe('config', () => {
     assert.throws(() => resolveConfig({ type: 'x', exclude: [1] as unknown as string[] }), /exclude/);
   });
 
+  it('reads the house options: style, colors, facing and the sky', () => {
+    const defaults = resolveConfig({ type: 'x' });
+    assert.deepEqual(
+      [defaults.house_style, defaults.house_facing, defaults.sky_weather, defaults.animate_sky],
+      ['auto', 'auto', true, true],
+    );
+    assert.equal(defaults.house_color, undefined, 'the style picks the colors until the user does');
+    const c = resolveConfig({
+      type: 'x',
+      house_style: 'brick',
+      house_facing: 'sw',
+      house_color: '#A0b4C8',
+      roof_color: [70, 60, 50],
+      trim_color: '#fff',
+      weather_entity: 'weather.home',
+    });
+    assert.deepEqual(c.house_color, [160, 180, 200]);
+    assert.deepEqual(c.roof_color, [70, 60, 50]);
+    assert.deepEqual(c.trim_color, [255, 255, 255]);
+    assert.equal(c.door_color, undefined);
+    assert.equal(c.weather_entity, 'weather.home');
+    assert.throws(() => resolveConfig({ type: 'x', house_color: 'blueish' }), /house_color/);
+    assert.throws(() => resolveConfig({ type: 'x', door_color: [300, 0, 0] }), /door_color/);
+    assert.throws(() => resolveConfig({ type: 'x', house_style: 'castle' as never }), /house_style/);
+    assert.throws(() => resolveConfig({ type: 'x', house_facing: 'up' as never }), /house_facing/);
+  });
+
   it('accepts a single string where a list is expected', () => {
     assert.deepEqual(resolveConfig({ type: 'x', areas: 'kitchen' as unknown as string[] }).areas, ['kitchen']);
   });

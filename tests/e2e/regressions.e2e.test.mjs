@@ -169,13 +169,14 @@ describe('Regressions', () => {
 
   it('keeps the camera still when only a light changes', async () => {
     const { page, context } = await open();
-    const viewBox = () =>
-      page.locator('lc-house').evaluate((el) => el.shadowRoot.querySelector('svg.scene').getAttribute('viewBox'));
-    const before = await viewBox();
+    const camera = () =>
+      page.locator('lc-house').evaluate((el) => el.shadowRoot.querySelector('svg.scene').dataset.camera);
+    const before = await camera();
+    assert.match(before, /^-?\d/, 'the camera is somewhere');
     await tile(page, 'Chandelier').click();
     await page.waitForFunction(() => window.__demo.hass.states['light.dining_chandelier'].state === 'on');
     await page.waitForTimeout(100);
-    assert.equal(await viewBox(), before);
+    assert.equal(await camera(), before);
     await context.close();
   });
 
@@ -225,10 +226,9 @@ describe('Regressions', () => {
     await page.waitForTimeout(1200);
     const house = await page.locator('lc-house').evaluate((el) => ({
       moving: Boolean(el.shadowRoot.querySelector('.stage.moving')),
-      ghost: Boolean(el.shadowRoot.querySelector('.ghost')),
-      settled: JSON.stringify(el._camera) === JSON.stringify(el.target),
+      settled: el.settled,
     }));
-    assert.deepEqual(house, { moving: false, ghost: false, settled: true });
+    assert.deepEqual(house, { moving: false, settled: true });
     await page.locator('lc-house .tag', { hasText: 'Bedroom' }).waitFor();
     await context.close();
   });

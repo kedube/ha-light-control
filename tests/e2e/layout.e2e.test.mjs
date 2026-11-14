@@ -92,9 +92,8 @@ describe('Layout', () => {
     const page = await open({ width: 360, query: '&lang=pl&sky=day' });
     const text = await box(page.locator('.hero-head'));
     const house = await page.locator('lc-house').evaluate((el) => {
-      const world = el.shadowRoot.querySelector('g.world');
       // The house itself: its roof is the highest thing in the picture.
-      const r = world.getBoundingClientRect();
+      const r = el.shadowRoot.querySelector('svg.scene .frame').getBoundingClientRect();
       return { top: r.top };
     });
     assert.ok(text.height > 60, 'the Polish summary wraps at this width');

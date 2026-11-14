@@ -5,14 +5,17 @@
 [![Release workflow](https://github.com/kedube/ha-light-control/actions/workflows/release.yml/badge.svg)](https://github.com/kedube/ha-light-control/actions/workflows/release.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/kedube/ha-light-control)](LICENSE)
 
-Every light and outlet in your home, found automatically and shown in a 3D model of your house. Open a floor like a dollhouse, watch each room light up as you switch it, and control lights and outlets separately for the whole home, a floor or a single room.
+Every light and outlet in your home, found automatically and shown in a 3D model of your house, rendered with real light and shadow under a sky that follows the sun. Turn the house with a finger, open a floor like a dollhouse, watch each room light up as you switch it, and control lights and outlets separately for the whole home, a floor or a single room.
 
-![Light Control Card at night: a 3D house on a glowing platform, its windows lit in each room's light color, above separate Lights and Outlets controls and rooms grouped by floor](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/overview-dark.png)
+![Light Control Card at night: a 3D house on its plot under a starry sky, its windows lit in each room's light color, above separate Lights and Outlets controls and rooms grouped by floor](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/overview-dark.png)
 
 ## Highlights
 
-- **Your home in 3D.** The card builds a model of your house from your Home Assistant floors and areas. Every room has windows that glow in the real color and brightness of its lights, outdoor areas become a garden, a porch or a driveway with their own lamps, and the sky follows the sun from day to dusk to night.
-- **Open any floor like a dollhouse.** Pick a floor and the roof lifts away. Rooms are furnished so you can tell the kitchen from the bedroom, and every lamp throws its own pool of light. Tap a room to see it up close.
+- **Your home in 3D.** The card builds a model of your house from your Home Assistant floors and areas and renders it with real light: sun and moon shadows, lamps that light their rooms, glass you can see through. Every room shows through its windows in the color and brightness of its lights, and outdoor areas become a garden, a porch or a driveway with their own lamps.
+- **Turn it, come closer.** Drag to turn the house and look at it from any side, pinch or use the buttons to zoom. Open a floor and the roof lifts away, along with whichever walls are between you and the rooms.
+- **Thirteen designs.** Colonial, Cape Cod, bungalow, ranch, craftsman, Victorian, mid-century modern, farmhouse, Mediterranean, Tudor, contemporary and more, each with its own roof, windows, porch and a garden to match. Pick the one closest to your house and paint it your own colors.
+- **A sky that is alive.** The sky is worked out from where the sun really is: blue at noon, red at sunset, deep blue at dusk, stars and the moon in its true phase at night. Clouds drift, stars twinkle, and the clouds can follow your weather.
+- **Open any floor like a dollhouse.** Rooms are furnished so you can tell the kitchen from the bedroom, and every light has a lamp of its own. Tap a room to see it up close.
 - **Lights and outlets, separately.** The whole home, each floor and each room have their own **Lights** and **Outlets** controls, so switching the lights never cuts power to a fridge or a computer. Turning several outlets off at once takes a second tap, and everything can be undone.
 - **On, dim and color for every light.** Tap a tile to switch it, slide across it to dim, or press and hold for brightness, color, white temperature and effects. In a room up close, every light has its own switch, slider and color button.
 - **Calm, even with a lot of devices.** Rooms are grouped by floor, outlets sit on a line of their own under the lights, and **On now** shows only what is on.
@@ -40,6 +43,14 @@ Every light and outlet in your home, found automatically and shown in a 3D model
 | :--------------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------: |
 | ![The card in a light theme with a daytime sky](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/overview-light.png) | ![The card on a phone, with the floor switcher over the house](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/phone.png) |
 
+|                                                                          A Tudor, from the same rooms                                                                          |                                                                                 A Mediterranean house                                                                                 |
+| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| ![The same home built as a Tudor: brick below, half-timbering above, steep gables](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/style-tudor.png) | ![The same home built as a Mediterranean house: arches, clay tiles and cypresses](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/style-mediterranean.png) |
+
+|                                                               Mid-century modern, at dusk                                                               |                                                     Turned to look at the back                                                     |
+| :-----------------------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------: |
+| ![The same home as a mid-century modern house at dusk](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/style-midcentury.png) | ![The house turned round, seen from behind](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/turned.png) |
+
 |                                                                             In a panel view                                                                              |
 | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 | ![The card filling a desktop panel view, with rooms side by side under each floor](https://raw.githubusercontent.com/kedube/ha-light-control/main/docs/images/panel.png) |
@@ -65,7 +76,7 @@ HACS registers the dashboard resource for you and offers updates whenever a new 
 
 When you update manually, add a version to the resource URL (for example `/local/ha-light-control.js?v=0.4`) so browsers fetch the new file.
 
-**Requirements:** Home Assistant 2024.11 or newer.
+**Requirements:** Home Assistant 2024.11 or newer. The 3D house is drawn with WebGL 2, which every current browser and the companion apps have; where it is missing, the card shows outlines of the rooms instead and everything else works the same.
 
 ## Add the card
 
@@ -82,6 +93,8 @@ The card works in any view and adapts to the space it gets. For a whole-house li
 ## Using the card
 
 **Places.** The switcher over the house moves between the whole home, each floor from the lowest up, and the outdoors. The house follows: the whole home from outside, a floor opened up like a dollhouse, or the garden.
+
+**The house.** Drag sideways to turn it and up or down to tip it; pinch, hold Ctrl while scrolling, or use the **+** and **−** buttons to zoom. A button appears to put the view back. An up-and-down swipe still scrolls the page.
 
 **Lights and Outlets.** Under the house, two controls act on the place you are looking at:
 
@@ -105,7 +118,7 @@ Every room card has the same two switches in small: a bulb for its lights and a 
 | **Scene chips** | Activate a scene assigned to the room.         |
 | **On now**      | Shows only the lights and outlets that are on. |
 
-With a keyboard, **Tab** moves between tiles, **Enter** or **Space** toggles, and the arrow keys change brightness in 10% steps. The arrow keys also move between the places over the house, and every slider and color wheel works with them.
+With a keyboard, **Tab** moves between tiles, **Enter** or **Space** toggles, and the arrow keys change brightness in 10% steps. The arrow keys also move between the places over the house, and every slider and color wheel works with them. With a room in the house focused, the arrow keys turn the house, **+** and **−** zoom, and **0** puts the view back.
 
 ## How the house is built
 
@@ -113,9 +126,11 @@ The 3D house comes from the floors and areas you already have in Home Assistant,
 
 - **Floors become stories**, in the order of their levels: basements below the grass, the ground floor with the front door, and the floors above. Rooms without a floor move in on the ground floor. A home without floors becomes a one-story house.
 - **Rooms are recognized by name**, in any of the card's languages, or by their area icon: living rooms get a sofa and a TV, kitchens counters and an island, bedrooms a bed and nightstands, garages a car. The kind of room also decides how big it is.
-- **Every room gets a place on an outside wall**, so its windows show from outside. Closets and storage go in the middle, and the stairs sit in the same spot on every floor.
-- **Outdoor areas** (a garden, a porch, a driveway, a pool) become the grounds around the house, and their lights become lamp posts and path lights.
+- **Every room gets a place on an outside wall**, so its windows show from outside. Closets and storage go in the middle, the stairs sit in the same spot on every floor, and a garage is built on as a wing of its own.
+- **Outdoor areas** (a garden, a porch, a driveway, a pool) become the grounds around the house, and their lights become lamp posts, path lights, lanterns by the door and strings of bulbs.
 - **Each light becomes a fixture** from its name: ceiling lights, pendants over the table and the kitchen island, lamps beside the sofa and the bed, and LED strips along the wall behind the TV.
+- **The design** is the one most houses have in the country Home Assistant is set to, until you choose another: a colonial, a Cape Cod, a bungalow, a ranch, a craftsman, a Victorian, a mid-century modern, a farmhouse, a Mediterranean house, a Tudor, a contemporary house, a brick house or a rendered one under clay tiles. Each has its own garden: clipped boxwood for the colonial, a picket fence and hydrangeas for the Cape Cod, cypresses and pots of flowers for the Mediterranean.
+- **The sky** comes from Home Assistant's sun: its height sets the color of the sky and the light, and its direction sets where the shadows fall. Tell the card which way your house faces and the sun shines on the same walls as it does on yours. With a weather entity, the clouds follow the weather.
 
 Organizing your home in **Settings → Areas, labels & zones**, with floors and clear area names, gives you the most faithful house.
 
@@ -138,29 +153,35 @@ The card reads Home Assistant's own registries, so organizing your home in **Set
 
 All options are optional.
 
-| Option              | Default  | Description                                                                                                                                |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `title`             | `Lights` | Card title, in each person's language unless you set your own. Set to `""` to hide it.                                                     |
-| `show_house`        | `true`   | Show the 3D house.                                                                                                                         |
-| `show_summary`      | `true`   | Show the status line under the title.                                                                                                      |
-| `show_room_filter`  | `true`   | Show the switcher for the whole home, each floor and the outdoors.                                                                         |
-| `show_scenes`       | `true`   | Show scenes assigned to each room.                                                                                                         |
-| `icon_style`        | `auto`   | `auto`: the card's artwork unless an entity has its own icon. `graphic`: always the card's artwork. `entity`: always Home Assistant icons. |
-| `show_outlets`      | `true`   | Include smart plugs and outlets, with their own **Outlets** controls.                                                                      |
-| `outlet_detection`  | `smart`  | `smart`: outlets plus switches on plug devices. `device_class`: only switches shown as Outlet. `all_switches`: every switch.               |
-| `areas`             | all      | Show only these area IDs, in this order.                                                                                                   |
-| `floors`            | all      | Show only areas on these floor IDs.                                                                                                        |
-| `exclude_areas`     | none     | Area IDs to leave out.                                                                                                                     |
-| `show_unassigned`   | `true`   | Show entities that have no area.                                                                                                           |
-| `unassigned_name`   | `Other`  | Name of the section for entities without an area.                                                                                          |
-| `include`           | none     | Entity IDs to always show, even hidden ones or other domains such as `input_boolean` and `fan`.                                            |
-| `exclude`           | none     | Entity IDs to always hide.                                                                                                                 |
-| `exclude_patterns`  | none     | Wildcard patterns to hide, such as `switch.*_led`. A pattern without a domain (`*_child_lock`) matches every domain.                       |
-| `show_unavailable`  | `true`   | Show unavailable entities, dimmed. Entities the integration no longer provides are always hidden.                                          |
-| `show_light_groups` | `true`   | Show light group entities (listed first in their room).                                                                                    |
-| `strip_area_names`  | `true`   | Remove the room name from the start of entity names.                                                                                       |
-| `tap_action`        | `toggle` | What tapping a tile does: `toggle`, `controls` (open the controls sheet), or `more-info` (Home Assistant's dialog).                        |
-| `live_brightness`   | `false`  | Update lights continuously while sliding. Leave off on slow Zigbee networks.                                                               |
+| Option              | Default  | Description                                                                                                                                                                                                             |
+| ------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`             | `Lights` | Card title, in each person's language unless you set your own. Set to `""` to hide it.                                                                                                                                  |
+| `show_house`        | `true`   | Show the 3D house.                                                                                                                                                                                                      |
+| `house_style`       | `auto`   | The design of the house: `colonial`, `capecod`, `bungalow`, `ranch`, `craftsman`, `victorian`, `midcentury`, `farmhouse`, `mediterranean`, `tudor`, `contemporary`, `brick` or `european`. `auto` follows your country. |
+| `house_color`       | style    | Color of the walls, as `"#rrggbb"` or `[r, g, b]`. Likewise `roof_color`, `trim_color` and `door_color`.                                                                                                                |
+| `house_facing`      | `auto`   | The compass direction the front of the house faces: `n`, `ne`, `e`, `se`, `s`, `sw`, `w` or `nw`. `auto` turns it toward the sun.                                                                                       |
+| `animate_sky`       | `true`   | Let the clouds drift and the stars twinkle. Turn off to save power on a wall tablet.                                                                                                                                    |
+| `sky_weather`       | `true`   | Let the clouds follow a weather entity.                                                                                                                                                                                 |
+| `weather_entity`    | first    | The weather entity to follow. Defaults to the first one Home Assistant has.                                                                                                                                             |
+| `show_summary`      | `true`   | Show the status line under the title.                                                                                                                                                                                   |
+| `show_room_filter`  | `true`   | Show the switcher for the whole home, each floor and the outdoors.                                                                                                                                                      |
+| `show_scenes`       | `true`   | Show scenes assigned to each room.                                                                                                                                                                                      |
+| `icon_style`        | `auto`   | `auto`: the card's artwork unless an entity has its own icon. `graphic`: always the card's artwork. `entity`: always Home Assistant icons.                                                                              |
+| `show_outlets`      | `true`   | Include smart plugs and outlets, with their own **Outlets** controls.                                                                                                                                                   |
+| `outlet_detection`  | `smart`  | `smart`: outlets plus switches on plug devices. `device_class`: only switches shown as Outlet. `all_switches`: every switch.                                                                                            |
+| `areas`             | all      | Show only these area IDs, in this order.                                                                                                                                                                                |
+| `floors`            | all      | Show only areas on these floor IDs.                                                                                                                                                                                     |
+| `exclude_areas`     | none     | Area IDs to leave out.                                                                                                                                                                                                  |
+| `show_unassigned`   | `true`   | Show entities that have no area.                                                                                                                                                                                        |
+| `unassigned_name`   | `Other`  | Name of the section for entities without an area.                                                                                                                                                                       |
+| `include`           | none     | Entity IDs to always show, even hidden ones or other domains such as `input_boolean` and `fan`.                                                                                                                         |
+| `exclude`           | none     | Entity IDs to always hide.                                                                                                                                                                                              |
+| `exclude_patterns`  | none     | Wildcard patterns to hide, such as `switch.*_led`. A pattern without a domain (`*_child_lock`) matches every domain.                                                                                                    |
+| `show_unavailable`  | `true`   | Show unavailable entities, dimmed. Entities the integration no longer provides are always hidden.                                                                                                                       |
+| `show_light_groups` | `true`   | Show light group entities (listed first in their room).                                                                                                                                                                 |
+| `strip_area_names`  | `true`   | Remove the room name from the start of entity names.                                                                                                                                                                    |
+| `tap_action`        | `toggle` | What tapping a tile does: `toggle`, `controls` (open the controls sheet), or `more-info` (Home Assistant's dialog).                                                                                                     |
+| `live_brightness`   | `false`  | Update lights continuously while sliding. Leave off on slow Zigbee networks.                                                                                                                                            |
 
 `room_switch_outlets` is no longer needed: outlets now have their own switches for every room, floor and the whole home, and the lights switches never touch them. It is still accepted, so existing dashboards keep working, but it has no effect.
 
@@ -184,6 +205,16 @@ areas:
   - living_room
   - kitchen
   - bedroom
+```
+
+A blue Victorian that faces west:
+
+```yaml
+type: custom:light-control-card
+house_style: victorian
+house_color: '#7f9cb0'
+door_color: '#8c2f39'
+house_facing: w
 ```
 
 A compact card without the house, where tapping opens the controls:
@@ -210,11 +241,11 @@ Translations live in [`src/translations`](src/translations). To add a language, 
 
 The card uses your Home Assistant theme's colors, fonts, card background and radius. A few extra variables fine-tune it, each as comma-separated RGB:
 
-| Variable          | Default        | Used for                                                                  |
-| ----------------- | -------------- | ------------------------------------------------------------------------- |
-| `--lc-holo-rgb`   | `86, 204, 255` | The holographic accents: the platform's edge, the floor switcher, labels. |
-| `--lc-on-rgb`     | `255, 190, 92` | Light switches that are on.                                               |
-| `--lc-outlet-rgb` | `38, 196, 152` | Outlets that are on.                                                      |
+| Variable          | Default        | Used for                                         |
+| ----------------- | -------------- | ------------------------------------------------ |
+| `--lc-holo-rgb`   | `86, 204, 255` | The accent of the floor switcher over the house. |
+| `--lc-on-rgb`     | `255, 190, 92` | Light switches that are on.                      |
+| `--lc-outlet-rgb` | `38, 196, 152` | Outlets that are on.                             |
 
 ```yaml
 my-theme:

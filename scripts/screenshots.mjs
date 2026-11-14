@@ -54,6 +54,33 @@ const shots = [
     target: 'light-control-card .hero',
   },
   {
+    // Other designs, built from the same rooms.
+    file: 'style-tudor.png',
+    query: '&theme=light&sky=day&style=tudor',
+    width: 1200,
+    target: 'light-control-card .hero',
+  },
+  {
+    file: 'style-mediterranean.png',
+    query: '&theme=light&sky=day&style=mediterranean',
+    width: 1200,
+    target: 'light-control-card .hero',
+  },
+  {
+    file: 'style-midcentury.png',
+    query: '&theme=dark&sky=dusk&style=midcentury',
+    width: 1200,
+    target: 'light-control-card .hero',
+  },
+  {
+    // Turned round by hand, to look at the back of the house.
+    file: 'turned.png',
+    query: '&theme=light&sky=day&style=farmhouse',
+    width: 1200,
+    orbit: { yaw: 3.75, tilt: 0.1, zoom: 1.15 },
+    target: 'light-control-card .hero',
+  },
+  {
     // A Panel view: the card alone, as wide as a desktop screen.
     file: 'panel.png',
     query: '&theme=dark&sky=night',
@@ -148,9 +175,14 @@ for (const shot of shots) {
     }
     await page.waitForTimeout(300);
   }
-  await page.waitForTimeout(700);
+  if (shot.orbit) {
+    await page.locator('lc-house').evaluate((el, orbit) => (el._orbit = orbit), shot.orbit);
+  }
   // Clips are in page coordinates; measure with the page scrolled to the top.
   await page.evaluate(() => window.scrollTo(0, 0));
+  // The house is drawn over a few dozen frames, and only while it is on screen: wait for the
+  // finished picture.
+  await page.waitForTimeout(1500);
   const target = page.locator(shot.target).first();
   const box = await target.boundingBox();
   await page.screenshot({

@@ -45,12 +45,17 @@ src/
   aggregate.ts             counts, colors, brightness and power for a room, a floor or the home
   room-columns.ts          rooms → balanced columns on wide cards
   house/
-    plan.ts                floors and areas → a floor plan (rooms along the outside walls, stairs)
+    plan.ts                floors and areas → a floor plan (rooms along the outside walls, stairs, garage wing)
+    materials.ts           what surfaces are made of, and the designs a house can be built in
+    model.ts               the plan → a 3D model: its mesh, its lamps, and what can be picked in each view
+    model/                 the parts of the model: shell (walls, windows, doors), roof, entry, interior, site
     furniture.ts           furniture for each kind of room
-    scene.ts               the plan and the lights → SVG shapes: outside, or a floor cut open
-    iso.ts                 isometric projection and painter's-order sorting
-    palette.ts             materials, and how daylight and lamps light them
-    sky.ts                 day, dusk or night from the sun
+    fixtures.ts            what kind of fixture a light is, from its name
+    mesh.ts                collects triangles: boxes, soft boxes, cylinders, foliage
+    sky.ts                 the sky from where the sun is: its colors, the sun and moon, the light on the house
+    camera.ts              where the camera stands, how it frames the house, where a point lands on screen
+    math.ts                vectors and matrices
+    gl/                    the WebGL 2 renderer and its shaders
   color.ts, config.ts, localize.ts, graphics.ts, styles.ts
   components/              house, tile, controls sheet, sliders and color wheel
   translations/            one file per language
@@ -62,7 +67,14 @@ scripts/                   build, screenshots and release helpers
 
 Keep logic that doesn't need the DOM in plain modules (like `discovery.ts` and everything in `house/`) so it can be unit tested without a browser. Components use Lit without decorators, so Node can run the TypeScript sources directly.
 
-The 3D house is plain SVG, drawn in isometric projection: no WebGL, no extra dependencies, and it stays sharp at any size. `scene.ts` returns the same list of shapes whatever the lights are doing, so a light turning on fades in rather than redrawing the picture; the unit tests check that.
+The 3D house is drawn with WebGL 2 by a small renderer of its own in `house/gl`: no dependencies, and no image files, as every surface (boards, bricks, shingles, grass, clouds) is drawn by the shaders. A few things about how it works are worth knowing before changing it:
+
+- **The model never changes when a light does.** `model.ts` builds one mesh for the whole house, with every floor furnished. Each vertex says which room it is in and which group of parts it belongs to. Switching a light only rewrites a small table the shaders read, and opening a floor only changes which groups are showing, so both can fade instead of redrawing. The unit tests check that the same home always gives the same mesh.
+- **The house is drawn only when something changes**, and then over a few dozen frames that are averaged: each from a slightly different point within a pixel and with the sun in a slightly different spot, which is what gives smooth edges and soft shadows. The sky is a separate, much cheaper pass under the finished picture of the house, so clouds can drift and stars twinkle without drawing the house again.
+- **Everything that can be picked is ordinary DOM.** The canvas is only a picture. Rooms are SVG paths laid over it (projected with the same camera), with labels, focus and screen-reader names, so the card works the same with a keyboard, and without WebGL: then `lc-house` draws outlines of the rooms instead.
+- **Plan space and world space.** Floor plans are in plan space (x along the front wall, y from back to front, z up); the renderer works in world space (y up, z toward the front). `mesh.ts` converts, and works out which way each triangle faces, so model code only ever thinks in plan space.
+
+To see a change, run `npm run dev` and try the demo page with `?style=tudor`, `?sky=dusk` and so on; `npm run screenshots` redraws the README pictures.
 
 ## Translations
 

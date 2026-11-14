@@ -4,7 +4,7 @@
 // right, so two walls face the viewer: the front (y = depth) and the right side (x = width).
 // Rooms are laid along those two walls, so each one has windows the viewer can see. Closets,
 // storage and the stairs go into a core at the back left, and the stairs sit in the same spot on
-// every floor.
+// every floor. A garage is built on as a wing of its own, beside the house on the left.
 
 import type { RoomType } from '../room-types.ts';
 
@@ -57,10 +57,16 @@ export interface HousePlan {
   base: number;
   /** Bottom to top. */
   stories: PlanStory[];
+  /** The garage, one story high, built onto the left side of the ground floor (x < 0). */
+  wing: PlanCell | null;
 }
 
 export const GROUND_ID = '__ground__';
 export const STORY_HEIGHT = 3;
+/** The garage wing: wide enough for a car and a workbench, and set back a little from the front. */
+const WING_WIDTH = 4;
+const WING_DEPTH = 6.2;
+const WING_SETBACK = 0.8;
 /** The stairwell at the back left of every floor. */
 export const STAIRS_WIDTH = 2;
 export const STAIRS_DEPTH = 3.4;
@@ -341,13 +347,19 @@ export function planHouse(floors: PlanFloorInput[], orphans: PlanRoomInput[] = [
   const stories = stack(floors, orphans);
   const multiStory = stories.length > 1;
 
+  // The first garage on the ground floor becomes the wing, unless it is all there is.
+  const groundRooms = stories.find((s) => s.ground)?.rooms ?? [];
+  const garage = groundRooms.length > 1 ? groundRooms.find((room) => room.type === 'garage') : undefined;
+
   const prepared = stories.map((story) => {
-    const items: Item[] = story.rooms.map((room) => ({ id: room.id, type: room.type, weight: roomWeight(room.type) }));
+    const items: Item[] = story.rooms
+      .filter((room) => room !== garage)
+      .map((room) => ({ id: room.id, type: room.type, weight: roomWeight(room.type) }));
     const stairsRoom = multiStory ? items.find((item) => item.type === 'stairs') : undefined;
     const rest = items.filter((item) => item !== stairsRoom);
     const facade = rest.filter((item) => !CORE_TYPES.has(item.type));
     const core = rest.filter((item) => CORE_TYPES.has(item.type));
-    // The garage sits at the end of the house, like most attached garages.
+    // A second garage sits at the end of the house.
     facade.sort((a, b) => Number(a.type === 'garage') - Number(b.type === 'garage'));
     const stairs: Item | null = multiStory
       ? (stairsRoom ?? { id: null, type: 'stairs', weight: roomWeight('stairs') })
@@ -361,8 +373,8 @@ export function planHouse(floors: PlanFloorInput[], orphans: PlanRoomInput[] = [
   const width = Math.max(7, snap(Math.sqrt(area * ASPECT)));
   const depth = Math.max(6, snap(area / width));
 
-  // A house with a basement stands a little higher, with basement windows at the bottom.
-  const base = stories.some((s) => s.rank < 0) ? 0.5 : 0.25;
+  // A house with a basement stands higher, with the basement's windows above the grass.
+  const base = stories.some((s) => s.rank < 0) ? 0.9 : 0.35;
 
   const planned: PlanStory[] = prepared.map(({ story, facade, core, stairs }, index) => {
     // Sparse floors get a hall or storage space, so their rooms keep a sensible size.
@@ -391,7 +403,12 @@ export function planHouse(floors: PlanFloorInput[], orphans: PlanRoomInput[] = [
     };
   });
 
-  return { width, depth, storyHeight: STORY_HEIGHT, base, stories: planned };
+  let wing: PlanCell | null = null;
+  if (garage) {
+    const y1 = depth - WING_SETBACK;
+    wing = { id: garage.id, type: 'garage', rect: rect(-WING_WIDTH, Math.max(0, y1 - WING_DEPTH), 0, y1) };
+  }
+  return { width, depth, storyHeight: STORY_HEIGHT, base, stories: planned, wing };
 }
 
 /** The walls of a cell that face the viewer: 'front' (y = depth) and 'right' (x = width). */

@@ -5,7 +5,7 @@ import type { DiscoveredEntity } from '../discovery.ts';
 import type { EntityView } from '../entity-model.ts';
 import { bulbArt, outletArt, type OutletStyle } from '../graphics.ts';
 import type { HomeAssistant } from '../ha-types.ts';
-import type { FixtureKind } from '../house/scene.ts';
+import type { FixtureKind } from '../house/fixtures.ts';
 import { icon, mdiTuneVariant, mdiWifiOff } from '../icons.ts';
 import { t } from '../localize.ts';
 import { artStyles, buttonReset, themeVars } from '../styles.ts';

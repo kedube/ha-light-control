@@ -51,7 +51,7 @@ describe('Visual editor', () => {
       await form(),
     );
     assert.equal(label, 'Afficher les prises connectées');
-    assert.deepEqual(sections, ['Affichage', 'Prises', 'Pièces', 'Entités', 'Comportement']);
+    assert.deepEqual(sections, ['Affichage', 'Maison 3D', 'Prises', 'Pièces', 'Entités', 'Comportement']);
   });
 
   it('writes back only what differs from the defaults', async () => {

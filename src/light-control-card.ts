@@ -8,7 +8,9 @@ import { discover, UNASSIGNED, type DiscoveredEntity, type Discovery, type Room 
 import type { EntityView } from './entity-model.ts';
 import { outletStyleFor, type OutletStyle } from './graphics.ts';
 import type { HomeAssistant } from './ha-types.ts';
-import { fixtureKind } from './house/scene.ts';
+import { fixtureKind } from './house/fixtures.ts';
+import { styleFor, type StyleName } from './house/materials.ts';
+import { cloudCover } from './house/sky.ts';
 import {
   icon,
   mdiChevronLeft,
@@ -23,7 +25,7 @@ import { setLanguage, t } from './localize.ts';
 import { balanceColumns, columnCount, columnWidth, estimateRoomHeight } from './room-columns.ts';
 import { floorGroups, groupOf, OUTSIDE, roomsIn, validScope, type FloorGroup, type Scope } from './scope.ts';
 import { buttonReset, themeVars } from './styles.ts';
-import { skyMode, type HouseRoom, type HouseView, type SunInfo } from './components/lc-house.ts';
+import { skyMode, type HouseColors, type HouseRoom, type HouseView, type SunInfo } from './components/lc-house.ts';
 import type { SlideDetail } from './components/lc-pill.ts';
 import type { SheetTarget } from './components/lc-sheet.ts';
 import type { TileActionDetail, TileBrightnessDetail } from './components/lc-tile.ts';
@@ -82,6 +84,8 @@ export class LightControlCard extends LitElement {
   private readonly controller = new LightController(this);
   private readonly viewCache = new Map<string, EntityView | undefined>();
   private discovery?: Discovery;
+  /** The weather entity the sky follows; null when there is none. */
+  private weatherId?: string | null;
   private discoveryKey: unknown[] = [];
   private resizeObserver?: ResizeObserver;
   private observedHead?: Element;
@@ -118,6 +122,7 @@ export class LightControlCard extends LitElement {
   setConfig(config: LightControlCardConfig): void {
     this._config = resolveConfig(config);
     this.discovery = undefined;
+    this.weatherId = undefined;
   }
 
   getCardSize(): number {
@@ -310,6 +315,11 @@ export class LightControlCard extends LitElement {
         .view=${this.houseView(groups, scope)}
         .selected=${scope.kind === 'room' ? scope.id : null}
         .sun=${sun}
+        .styleName=${this.houseStyle()}
+        .colors=${this.houseColors()}
+        .facing=${this.houseFacing()}
+        .clouds=${this.cloudCover()}
+        .motion=${config.animate_sky}
         .topInset=${hasText ? this._headHeight + 6 : 8}
         .titleWidth=${hasText ? this._headWidth : 0}
         .bottomInset=${tabs === nothing ? 0 : 52}
@@ -417,6 +427,38 @@ export class LightControlCard extends LitElement {
           }),
         };
       });
+  }
+
+  /** How the house is built: as chosen, or as most houses are in the country Home Assistant is set to. */
+  private houseStyle(): StyleName {
+    const style = this._config!.house_style;
+    return style === 'auto' ? styleFor(this.hass?.config?.country) : style;
+  }
+
+  /** Colors the user chose for the house instead of the style's own. */
+  private houseColors(): HouseColors | undefined {
+    const { house_color: wall, roof_color: roof, trim_color: trim, door_color: door } = this._config!;
+    return wall || roof || trim || door ? { wall, roof, trim, door } : undefined;
+  }
+
+  /** The compass direction the front of the house faces: as chosen, or toward the sun's side of the sky. */
+  private houseFacing(): number {
+    const facing = this._config!.house_facing;
+    if (facing === 'auto') return (this.hass?.config?.latitude ?? 1) < 0 ? 0 : 180;
+    return ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'].indexOf(facing) * 45;
+  }
+
+  /** How clouded over the sky is, from the weather entity; undefined for fair weather. */
+  private cloudCover(): number | undefined {
+    const config = this._config!;
+    const states = this.hass?.states;
+    if (!config.sky_weather || !states) return undefined;
+    // Looking through every entity is slow, so the first weather entity found is remembered.
+    if (this.weatherId === undefined) {
+      this.weatherId = config.weather_entity ?? Object.keys(states).find((id) => id.startsWith('weather.')) ?? null;
+    }
+    const weather = this.weatherId ? states[this.weatherId] : undefined;
+    return weather ? cloudCover(weather.state, weather.attributes.cloud_coverage) : undefined;
   }
 
   private sunInfo(): SunInfo | undefined {

@@ -70,9 +70,27 @@ describe('planHouse', () => {
   it('places every room exactly once and tiles each floor', () => {
     const plan = planHouse(demo);
     assertTiled(plan);
-    const placed = plan.stories.flatMap((s) => s.cells.map((c) => c.id)).filter(Boolean);
+    const placed = [...plan.stories.flatMap((s) => s.cells.map((c) => c.id)), plan.wing?.id].filter(Boolean);
     const expected = demo.flatMap((f) => f.rooms.map((r) => r.id));
     assert.deepEqual([...placed].sort(), [...expected].sort());
+  });
+
+  it('builds the garage on as a wing beside the house', () => {
+    const plan = planHouse(demo);
+    const wing = plan.wing!;
+    assert.equal(wing.type, 'garage');
+    assert.ok(wing.rect.x1 === 0 && wing.rect.x0 < -3, 'left of the house, wide enough for a car');
+    assert.ok(wing.rect.y0 >= 0 && wing.rect.y1 < plan.depth, 'set back from the front');
+    assert.ok(wing.rect.y1 - wing.rect.y0 > 4.5, 'long enough for a car');
+    assert.ok(!plan.stories.some((s) => s.cells.some((c) => c.type === 'garage')), 'and not inside it as well');
+    // A garage that is all there is stays the house; a second one stays inside.
+    const alone = planHouse([], rooms('garage'));
+    assert.equal(alone.wing, null);
+    assert.equal(alone.stories[0].cells[0].type, 'garage');
+    const two = planHouse([], [...rooms('living', 'garage'), { id: 'second', type: 'garage' }]);
+    assert.equal(two.wing!.id, 'garage1');
+    assert.ok(two.stories[0].cells.some((c) => c.id === 'second'));
+    assert.equal(planHouse([], rooms('living', 'kitchen')).wing, null);
   });
 
   it('gives every room a wall the viewer can see when there is space along the outside', () => {
