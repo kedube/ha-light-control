@@ -101,6 +101,12 @@ export const it: Translation = {
   opt_style_contemporary: 'Contemporaneo',
   opt_style_brick: 'Mattoni',
   opt_style_european: 'Europeo: intonaco e tegole',
+  cfg_house_top_floor: 'Ultimo piano',
+  opt_top_floor_auto: 'Secondo lo stile della casa',
+  opt_top_floor_roof: 'Sotto il tetto',
+  opt_top_floor_full: 'Un piano intero',
+  help_house_top_floor:
+    'Sotto il tetto, l’ultimo piano ha soffitti inclinati e abbaini. Se decide lo stile, un piano chiamato Mansarda o Soffitta è sempre lì.',
   cfg_house_facing: 'La facciata della casa guarda a',
   opt_facing_auto: 'Verso il sole',
   opt_facing_n: 'Nord',

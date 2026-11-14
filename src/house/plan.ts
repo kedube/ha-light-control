@@ -17,6 +17,8 @@ export interface PlanFloorInput {
   id: string;
   /** Home Assistant floor level; floors without one keep their place in the list. */
   level: number | null;
+  /** Named as an attic or a loft: a floor like this is built into the roof. */
+  attic?: boolean;
   rooms: PlanRoomInput[];
 }
 
@@ -44,6 +46,8 @@ export interface PlanStory {
   basement: boolean;
   /** The story holding rooms without a floor, and the front door. */
   ground: boolean;
+  /** An attic by name, or with nothing but attic rooms on it. Whether it is built into the roof is up to the model. */
+  attic: boolean;
   cells: PlanCell[];
 }
 
@@ -314,12 +318,15 @@ interface StoryInput {
   rank: number;
   rooms: PlanRoomInput[];
   ground: boolean;
+  attic: boolean;
 }
 
 /** Orders Home Assistant floors into stories and finds the ground floor. */
 function stack(floors: PlanFloorInput[], orphans: PlanRoomInput[]): StoryInput[] {
   const populated = floors.filter((f) => f.rooms.length);
-  if (!populated.length) return orphans.length ? [{ id: GROUND_ID, rank: 0, rooms: orphans, ground: true }] : [];
+  if (!populated.length) {
+    return orphans.length ? [{ id: GROUND_ID, rank: 0, rooms: orphans, ground: true, attic: false }] : [];
+  }
   const levelOf = floorLevels(populated);
   const levels = [...new Set(populated.map((f) => levelOf.get(f.id)!))].sort((a, b) => a - b);
   const ground = groundLevel(levels);
@@ -329,11 +336,13 @@ function stack(floors: PlanFloorInput[], orphans: PlanRoomInput[]): StoryInput[]
     const onLevel = populated.filter((f) => levelOf.get(f.id) === level);
     const rank = levels.indexOf(level) - groundIndex;
     // Two floors on the same level share a story; the first one names it.
+    const rooms = [...onLevel.flatMap((f) => f.rooms), ...(level === ground ? orphans : [])];
     stories.push({
       id: onLevel[0].id,
       rank,
-      rooms: [...onLevel.flatMap((f) => f.rooms), ...(level === ground ? orphans : [])],
+      rooms,
       ground: level === ground,
+      attic: onLevel.some((f) => f.attic) || rooms.every((room) => room.type === 'attic'),
     });
   }
   return stories;
@@ -381,7 +390,9 @@ export function planHouse(floors: PlanFloorInput[], orphans: PlanRoomInput[] = [
     const deficit = heaviest * 0.72 - weightOf(prepared[index]);
     const coreItems = [...core];
     if (deficit > 0.35 && facade.length + core.length > 0) {
-      coreItems.push({ id: null, type: story.rank < 0 ? 'storage' : 'hallway', weight: deficit });
+      // A basement fills up with storage, an attic with what is kept under the roof.
+      const filler = story.rank < 0 ? 'storage' : story.attic && story.rank > 0 ? 'attic' : 'hallway';
+      coreItems.push({ id: null, type: filler, weight: deficit });
     }
     // Only so many rooms fit along the outside walls; the smallest ones move to the core.
     const capacity = Math.max(3, Math.round((width + depth) / 3.2));
@@ -399,6 +410,7 @@ export function planHouse(floors: PlanFloorInput[], orphans: PlanRoomInput[] = [
       z: round(base + story.rank * STORY_HEIGHT),
       basement: story.rank < 0,
       ground: story.ground,
+      attic: story.attic && story.rank > 0,
       cells: layoutStory(onFacade, coreItems, width, depth, stairs),
     };
   });
@@ -417,4 +429,38 @@ export function facadesOf(cell: PlanCell, plan: HousePlan): ('front' | 'right')[
   if (Math.abs(cell.rect.y1 - plan.depth) < 0.01) sides.push('front');
   if (Math.abs(cell.rect.x1 - plan.width) < 0.01) sides.push('right');
   return sides;
+}
+
+export type Side = 'front' | 'right' | 'back' | 'left';
+
+/** The stretch of an outside wall that belongs to a cell, or null if the cell does not touch it. */
+export function span(cell: PlanCell, plan: HousePlan, side: Side): [number, number] | null {
+  const r = cell.rect;
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+  if (side === 'front') return near(r.y1, plan.depth) ? [r.x0, r.x1] : null;
+  if (side === 'back') return near(r.y0, 0) ? [r.x0, r.x1] : null;
+  if (side === 'right') return near(r.x1, plan.width) ? [r.y0, r.y1] : null;
+  return near(r.x0, 0) ? [r.y0, r.y1] : null;
+}
+
+/** Where the front door is: in a hallway on the front wall, else near the middle of it. */
+export function frontDoor(plan: HousePlan): { x: number; cell: PlanCell } | null {
+  const ground = plan.stories.find((s) => s.ground);
+  if (!ground) return null;
+  const front = ground.cells.filter((c) => span(c, plan, 'front') && c.type !== 'garage');
+  if (!front.length) return null;
+  const mid = plan.width * 0.45;
+  const nearest = (cells: PlanCell[]) =>
+    cells.reduce((best, c) =>
+      Math.abs((c.rect.x0 + c.rect.x1) / 2 - mid) < Math.abs((best.rect.x0 + best.rect.x1) / 2 - mid) ? c : best,
+    );
+  // An entrance hall if there is one, else the living room, else whatever is in the middle.
+  const preferred = ['hallway', 'living', 'dining']
+    .map((type) => front.filter((c) => c.type === type && c.id))
+    .find((list) => list.length);
+  const cell = nearest(preferred ?? front);
+  const w = cell.rect.x1 - cell.rect.x0;
+  // Off-center in wide rooms, so a window fits beside the door.
+  const x = w > 3.4 ? cell.rect.x0 + Math.min(1.4, w * 0.3) : (cell.rect.x0 + cell.rect.x1) / 2;
+  return { x: Math.max(0.9, Math.min(plan.width - 0.9, x)), cell };
 }

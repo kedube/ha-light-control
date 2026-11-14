@@ -131,6 +131,12 @@ export const pl: Translation = {
   opt_style_contemporary: 'Współczesny',
   opt_style_brick: 'Cegła',
   opt_style_european: 'Europejski: tynk i dachówka',
+  cfg_house_top_floor: 'Najwyższe piętro',
+  opt_top_floor_auto: 'Zgodnie ze stylem domu',
+  opt_top_floor_roof: 'Pod dachem',
+  opt_top_floor_full: 'Pełna kondygnacja',
+  help_house_top_floor:
+    'Pod dachem najwyższe piętro ma skosy i lukarny. Gdy decyduje styl, piętro o nazwie Poddasze lub Strych zawsze znajduje się tam.',
   cfg_house_facing: 'Front domu jest zwrócony na',
   opt_facing_auto: 'W stronę słońca',
   opt_facing_n: 'Północ',

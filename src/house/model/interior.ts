@@ -5,9 +5,11 @@ import type { RoomType } from '../../room-types.ts';
 import { fixtureKind, PENDANT } from '../fixtures.ts';
 import { furnish, type Spots } from '../furniture.ts';
 import { PAINT, type PaintName } from '../materials.ts';
+import type { Plane } from '../mesh.ts';
 import type { PlanCell, PlanStory, Rect } from '../plan.ts';
 import { Context, CUT_H, EXT_T, INT_T, WALL_H, type Point, type RoomInput } from './context.ts';
-import { wallRun, WING_FLOOR, wingHeight, type Frame, type Opening } from './shell.ts';
+import { LINING, roofAt, under, WING_FLOOR, wingHeight } from './massing.ts';
+import { wallRun, type Frame, type Opening } from './walls.ts';
 
 const OPEN_PLAN: ReadonlySet<RoomType> = new Set(['living', 'dining', 'kitchen']);
 
@@ -58,6 +60,8 @@ function around(r: Rect, hole: Rect | null): Rect[] {
 }
 
 const STEPS = 12;
+/** Under a roof, furniture stands where the ceiling is at least this high. */
+const STAND = 1.05;
 
 /** Where the flight of stairs runs in a stairs cell: it climbs toward the back wall. */
 function flight(cell: PlanCell): Rect & { run: number } {
@@ -99,12 +103,15 @@ function stairs(c: Context, cell: PlanCell, story: PlanStory, up: boolean, room:
   });
 }
 
-/** A lamp for every light in a room, placed by its furniture. */
+/**
+ * A lamp for every light in a room, placed by its furniture. `ceiling` gives the height of the
+ * ceiling over a point: under a roof it slopes, and lamps keep to where there is room for them.
+ */
 function fixtures(
   c: Context,
   rect: Rect,
   z: number,
-  ceiling: number,
+  ceiling: (x: number, y: number) => number,
   room: RoomInput,
   index: number,
   spots: Spots,
@@ -113,22 +120,44 @@ function fixtures(
   const m = c.mesh;
   const first = c.slotCount;
   const kinds = room.lights.map((l) => fixtureKind(l.name));
-  const lampSpots = [...spots.lamps];
+  const w = rect.x1 - rect.x0;
+  const d = rect.y1 - rect.y0;
+  const headroom = (x: number, y: number) => ceiling(x, y) - z;
+  // Where the ceiling is highest: lamps that find no room where they would stand move toward it.
+  let highest = 0;
+  const lattice: [number, number][] = [];
+  for (let i = 0; i < 7; i++) {
+    for (let j = 0; j < 7; j++) {
+      const at: [number, number] = [rect.x0 + w * (0.14 + 0.12 * i), rect.y0 + d * (0.14 + 0.12 * j)];
+      lattice.push(at);
+      highest = Math.max(highest, headroom(at[0], at[1]));
+    }
+  }
+  const clear = (x: number, y: number, need: number): [number, number] => {
+    if (headroom(x, y) >= Math.min(need, highest - 0.02)) return [x, y];
+    const enough = lattice.filter((at) => headroom(at[0], at[1]) >= Math.min(need, highest - 0.02));
+    return enough.reduce((best, at) =>
+      Math.hypot(at[0] - x, at[1] - y) < Math.hypot(best[0] - x, best[1] - y) ? at : best,
+    );
+  };
+  // A lamp from the furniture keeps its place if it fits there, shortened under a slope.
+  const lampSpots = spots.lamps
+    .filter(([x, y, h]) => headroom(x, y) > Math.min(h, 0.8) + 0.1)
+    .map(([x, y, h]): [number, number, number] => [x, y, Math.min(h, headroom(x, y) - 0.1)]);
   // Lamps without a place of their own stand along the front of the room.
   const extraLamps = Math.max(0, kinds.filter((k) => k === 'lamp').length - lampSpots.length);
   for (let i = 0; i < extraLamps; i++) {
-    lampSpots.push([rect.x0 + ((rect.x1 - rect.x0) * (i + 0.5)) / extraLamps, rect.y1 - 0.5, 1.5]);
+    const [x, y] = clear(rect.x0 + (w * (i + 0.5)) / extraLamps, rect.y1 - 0.5, 1.6);
+    if (headroom(x, y) > 0.9) lampSpots.push([x, y, Math.min(1.5, headroom(x, y) - 0.1)]);
   }
   let pendants = 0;
   const onCeiling = kinds.filter(
     (k) => k === 'ceiling' || (k === 'pendant' && (!spots.pendant || pendants++ > 0)),
   ).length;
-  const w = rect.x1 - rect.x0;
-  const d = rect.y1 - rect.y0;
   const ceilingSpots = grid(
     { x0: rect.x0 + w * 0.2, y0: rect.y0 + d * 0.22, x1: rect.x1 - w * 0.2, y1: rect.y1 - d * 0.18 },
     Math.max(1, onCeiling),
-  );
+  ).map(([x, y]) => clear(x, y, 2.3));
   let pendantUsed = false;
   let stripUsed = false;
   room.lights.forEach((light, i) => {
@@ -142,6 +171,11 @@ function fixtures(
       stripUsed = true;
       const from: Point = s ? [s.from[0], s.from[1], s.z] : [rect.x0 + 0.3, rect.y0 + 0.08, z + 0.1];
       const to: Point = s ? [s.to[0], s.to[1], s.z] : [rect.x1 - 0.3, rect.y0 + 0.08, z + 0.1];
+      // Under a slope the strip runs lower, where the wall still stands.
+      from[2] = to[2] = Math.max(
+        z + 0.06,
+        Math.min(from[2], ceiling(from[0], from[1]) - 0.08, ceiling(to[0], to[1]) - 0.08),
+      );
       m.with({ group, room: index, emit: slot, ...PAINT.strip }, () =>
         m.box(
           Math.min(from[0], to[0]) - 0.012,
@@ -181,17 +215,18 @@ function fixtures(
     const hung = kind === 'pendant' || PENDANT.test(light.name);
     if (kind === 'pendant' && spots.pendant && !pendantUsed) {
       pendantUsed = true;
-      [x, y] = spots.pendant;
+      [x, y] = clear(spots.pendant[0], spots.pendant[1], 2);
       drop = 1.72;
     } else {
-      [x, y] = ceilingSpots.shift() ?? [(rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2];
+      [x, y] = ceilingSpots.shift() ?? clear((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2, 2.3);
       drop = hung ? 1.75 : 2.36;
     }
-    const top = z + drop;
+    const above = ceiling(x, y);
     // Hung from the ceiling on a rod, so it reads as a ceiling light even with the ceiling lifted off.
+    const top = Math.min(z + drop, above - 0.16);
     m.with({ group, room: index, ...PAINT.lampPost }, () => {
-      m.cylinder(x, y, top, ceiling, 0.01, 0.01, 6, 0);
-      m.cylinder(x, y, ceiling - 0.03, ceiling, 0.06, 0.06, 10, 1);
+      m.cylinder(x, y, top, above, 0.01, 0.01, 6, 0);
+      m.cylinder(x, y, above - 0.03, above, 0.06, 0.06, 10, 1);
     });
     if (hung) {
       // A pendant: a glass shade that glows, open underneath.
@@ -263,6 +298,62 @@ function partitions(c: Context, story: PlanStory): void {
   }
 }
 
+/**
+ * The ceiling of a room under the roof: it follows the slopes down to the low walls, and is flat
+ * under the ridge. It is open where a dormer stands, and under a gable that faces the front.
+ */
+function lining(c: Context, story: PlanStory, cell: PlanCell): void {
+  const m = c.mesh;
+  const roof = c.roof;
+  const r = cell.rect;
+  const slopes = under(roof, LINING)![0];
+  const flat: Plane = { n: [0, 0, 1], d: story.z + WALL_H };
+  // A rectangle of the plan, lifted onto a slope.
+  const on = (plane: Plane, x0: number, x1: number, y0: number, y1: number) => {
+    if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return;
+    const z = (x: number, y: number) => plane.d - plane.n[0] * x - plane.n[1] * y;
+    m.quad(
+      [x0, y0, z(x0, y0)],
+      [x1, y0, z(x1, y0)],
+      [x1, y1, z(x1, y1)],
+      [x0, y1, z(x0, y1)],
+      [-plane.n[0], -plane.n[1], -1],
+    );
+  };
+  slopes.forEach((plane, i) => {
+    // The first two slopes are the front and the back; a hipped roof has two more at its ends.
+    const side = i === 0 ? 'front' : i === 1 ? 'back' : null;
+    const holes: { a: number; b: number; y0: number; y1: number }[] = [];
+    if (side) {
+      const hole = (a: number, b: number, t0: number, t1: number) => {
+        if (b <= r.x0 || a >= r.x1) return;
+        const [y0, y1] = side === 'front' ? [roof.y1 - t1, roof.y1 - t0] : [roof.y0 + t0, roof.y0 + t1];
+        holes.push({ a: Math.max(a, r.x0), b: Math.min(b, r.x1), y0, y1 });
+      };
+      for (const d of c.loftWindows.dormers) {
+        if (d.side === side && d.kind !== 'skylight') hole(d.x - d.half, d.x + d.half, d.set, d.reach);
+      }
+      const cross = roof.cross;
+      if (cross && side === 'front') hole(cross.at - cross.half, cross.at + cross.half, 0, roof.y1 - cross.dies);
+    }
+    holes.sort((p, q) => p.a - q.a);
+    // Each slope's ceiling ends where another slope, or the flat part, comes lower.
+    m.with({ clip: [[...slopes.filter((_, j) => j !== i), flat]] }, () => {
+      let from = r.x0;
+      for (const h of holes) {
+        on(plane, from, h.a, r.y0, r.y1);
+        on(plane, h.a, h.b, r.y0, Math.min(r.y1, h.y0));
+        on(plane, h.a, h.b, Math.max(r.y0, h.y1), r.y1);
+        from = Math.max(from, h.b);
+      }
+      on(plane, from, r.x1, r.y0, r.y1);
+    });
+  });
+  m.with({ clip: [slopes] }, () =>
+    m.quad([r.x0, r.y0, flat.d], [r.x1, r.y0, flat.d], [r.x1, r.y1, flat.d], [r.x0, r.y1, flat.d], [0, 0, -1]),
+  );
+}
+
 function storyInterior(c: Context, story: PlanStory): void {
   const plan = c.plan;
   const m = c.mesh;
@@ -271,42 +362,73 @@ function storyInterior(c: Context, story: PlanStory): void {
   const above = plan.stories[story.index + 1];
   const below = plan.stories[story.index - 1];
   const ceilingGroup = above ? c.groups.lower[above.index] : c.groups.roof;
-  for (const cell of story.cells) {
-    const r = cell.rect;
-    const room = c.roomOf(cell, story);
-    const isStairs = cell.type === 'stairs';
-    // The stairwell is open where the flight from below arrives, and above the last flight.
-    const well = isStairs ? flight(cell) : null;
-    const floorHole = well && below && !above ? well : null;
-    const ceilingHole = well && above && !plan.stories[above.index + 1] ? well : null;
-    m.with({ group: lower, room, ...PAINT[FLOOR[cell.type] ?? 'oak'] }, () => {
-      for (const part of around(r, floorHole)) {
-        m.quad([part.x0, part.y0, z], [part.x1, part.y0, z], [part.x1, part.y1, z], [part.x0, part.y1, z], [0, 0, 1]);
+  // Under the roof, the ceiling slopes, and whatever stands under a slope is cut to fit.
+  const loft = c.roof.loft === story;
+  const ceiling = loft
+    ? (x: number, y: number) => Math.min(z + WALL_H, roofAt(c.roof, x, y) - LINING)
+    : () => z + WALL_H;
+  const draw = () => {
+    for (const cell of story.cells) {
+      const r = cell.rect;
+      const room = c.roomOf(cell, story);
+      const isStairs = cell.type === 'stairs';
+      // The stairwell is open where the flight from below arrives, and above the last flight.
+      const well = isStairs ? flight(cell) : null;
+      const floorHole = well && below && !above ? well : null;
+      const ceilingHole = well && above && !plan.stories[above.index + 1] ? well : null;
+      m.with({ group: lower, room, ...PAINT[FLOOR[cell.type] ?? 'oak'] }, () => {
+        for (const part of around(r, floorHole)) {
+          m.quad([part.x0, part.y0, z], [part.x1, part.y0, z], [part.x1, part.y1, z], [part.x0, part.y1, z], [0, 0, 1]);
+        }
+      });
+      m.with({ group: ceilingGroup, room, ...PAINT.ceiling }, () => {
+        if (loft) {
+          lining(c, story, cell);
+          return;
+        }
+        const h = z + WALL_H;
+        for (const part of around(r, ceilingHole)) {
+          m.quad(
+            [part.x0, part.y0, h],
+            [part.x1, part.y0, h],
+            [part.x1, part.y1, h],
+            [part.x0, part.y1, h],
+            [0, 0, -1],
+          );
+        }
+      });
+      // Furniture keeps clear of the outside walls.
+      const inner: Rect = {
+        x0: r.x0 + (r.x0 < 0.01 ? EXT_T : INT_T / 2),
+        y0: r.y0 + (r.y0 < 0.01 ? EXT_T : INT_T / 2),
+        x1: r.x1 - (r.x1 > plan.width - 0.01 ? EXT_T : INT_T / 2),
+        y1: r.y1 - (r.y1 > plan.depth - 0.01 ? EXT_T : INT_T / 2),
+      };
+      if (loft) {
+        // And of the low space under the eaves, where nothing taller than a box would fit.
+        const roof = c.roof;
+        const low = (STAND + LINING - roof.knee) / roof.pitch;
+        inner.y0 = Math.max(inner.y0, roof.y0 + low);
+        inner.y1 = Math.min(inner.y1, roof.y1 - low);
+        if (roof.form === 'hip') {
+          const ends = (STAND + LINING - roof.knee) / roof.endPitch;
+          inner.x0 = Math.max(inner.x0, roof.x0 + ends);
+          inner.x1 = Math.min(inner.x1, roof.x1 - ends);
+        }
       }
-    });
-    m.with({ group: ceilingGroup, room, ...PAINT.ceiling }, () => {
-      const h = z + WALL_H;
-      for (const part of around(r, ceilingHole)) {
-        m.quad([part.x0, part.y0, h], [part.x1, part.y0, h], [part.x1, part.y1, h], [part.x0, part.y1, h], [0, 0, -1]);
-      }
-    });
-    // Furniture keeps clear of the outside walls.
-    const inner: Rect = {
-      x0: r.x0 + (r.x0 < 0.01 ? EXT_T : INT_T / 2),
-      y0: r.y0 + (r.y0 < 0.01 ? EXT_T : INT_T / 2),
-      x1: r.x1 - (r.x1 > plan.width - 0.01 ? EXT_T : INT_T / 2),
-      y1: r.y1 - (r.y1 > plan.depth - 0.01 ? EXT_T : INT_T / 2),
-    };
-    const toward = Math.abs(r.y1 - plan.depth) < 0.01 ? 'front' : Math.abs(r.x1 - plan.width) < 0.01 ? 'right' : null;
-    let spots: Spots = { lamps: [] };
-    m.with({ group: lower, room }, () => {
-      spots = furnish(m, cell.type, inner, z, toward);
-    });
-    if (isStairs) stairs(c, cell, story, Boolean(above), room);
-    const input = cell.id ? c.input.rooms.get(cell.id) : undefined;
-    if (input) fixtures(c, inner, z, z + WALL_H, input, room, spots, lower);
-  }
-  partitions(c, story);
+      const toward = Math.abs(r.y1 - plan.depth) < 0.01 ? 'front' : Math.abs(r.x1 - plan.width) < 0.01 ? 'right' : null;
+      let spots: Spots = { lamps: [] };
+      m.with({ group: lower, room }, () => {
+        spots = furnish(m, cell.type, inner, z, toward);
+      });
+      if (isStairs) stairs(c, cell, story, Boolean(above), room);
+      const input = cell.id ? c.input.rooms.get(cell.id) : undefined;
+      if (input) fixtures(c, inner, z, ceiling, input, room, spots, lower);
+    }
+    partitions(c, story);
+  };
+  if (loft) m.with({ clip: under(c.roof, LINING + 0.006) }, draw);
+  else draw();
 }
 
 function wingInterior(c: Context): void {
@@ -332,7 +454,7 @@ function wingInterior(c: Context): void {
     spots = furnish(m, 'garage', inner, z, 'front');
   });
   const input = wing.id ? c.input.rooms.get(wing.id) : undefined;
-  if (input) fixtures(c, inner, z, top, input, room, spots, lower);
+  if (input) fixtures(c, inner, z, () => top, input, room, spots, lower);
 }
 
 export function buildInterior(c: Context): void {

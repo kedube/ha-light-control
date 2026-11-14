@@ -200,9 +200,20 @@ const areas: Record<string, AreaRegistryEntry> = {
 
 /**
  * The demo home can also be laid out without floors (a bungalow, as many homes are set up) or
- * without any areas at all, to show how the card copes: ?home=flat or ?home=bare.
+ * without any areas at all, to show how the card copes: ?home=flat or ?home=bare. With ?home=attic
+ * it has a floor under the roof as well. From the address bar, ?drop=basement,upstairs leaves
+ * floors out, with everything on them, to try houses of other heights.
  */
 const homeLayout = params.get('home');
+const dropped = new Set((params.get('drop') ?? '').split(',').filter(Boolean));
+
+if (homeLayout === 'attic') {
+  floors.attic = { floor_id: 'attic', name: 'Attic', level: 2, icon: 'mdi:home-roof' };
+  areas.guest_room = area('guest_room', 'Guest Room', 'attic');
+  areas.attic = area('attic', 'Attic', 'attic');
+}
+for (const id of dropped) delete floors[id];
+for (const [id, a] of Object.entries(areas)) if (a.floor_id && dropped.has(a.floor_id)) delete areas[id];
 
 function layoutFloors(): Record<string, FloorRegistryEntry> {
   return homeLayout === 'flat' || homeLayout === 'bare' ? {} : floors;
@@ -408,6 +419,21 @@ const lightSpecs: LightSpec[] = [
   { id: 'christmas_tree', name: 'Christmas Tree', modes: ONOFF, on: true, icon: 'mdi:pine-tree' },
 ];
 
+if (homeLayout === 'attic') {
+  lightSpecs.push(
+    {
+      id: 'guest_room_ceiling',
+      name: 'Guest Room Ceiling',
+      area: 'guest_room',
+      modes: WHITE,
+      on: true,
+      brightness: 70,
+    },
+    { id: 'guest_room_lamp', name: 'Guest Room Lamp', area: 'guest_room', modes: COLOR, on: true, brightness: 50 },
+    { id: 'attic_light', name: 'Attic Light', area: 'attic', modes: DIM, on: true, brightness: 80 },
+  );
+}
+
 interface PlugSpec {
   id: string;
   name: string;
@@ -493,6 +519,18 @@ const scenes: Record<string, { name: string; area: string; apply: Record<string,
     },
   },
 };
+
+/** True for anything in an area that went with a dropped floor. */
+const gone = (areaId?: string | null, deviceId?: string | null): boolean => {
+  const id = areaId ?? (deviceId ? devices[deviceId]?.area_id : null);
+  return Boolean(id && !areas[id]);
+};
+if (dropped.size) {
+  lightSpecs.splice(0, lightSpecs.length, ...lightSpecs.filter((s) => !gone(s.area, s.device)));
+  plugSpecs.splice(0, plugSpecs.length, ...plugSpecs.filter((s) => !gone(s.area, s.device)));
+  otherSwitches.splice(0, otherSwitches.length, ...otherSwitches.filter((s) => !gone(null, s.device)));
+  for (const [id, scene] of Object.entries(scenes)) if (gone(scene.area)) delete scenes[id];
+}
 
 interface LightState {
   on: boolean;
@@ -889,6 +927,7 @@ let cardConfig: Record<string, unknown> = { type: 'custom:light-control-card' };
 // A design and colors for the house can be tried from the address bar: ?style=tudor&wall=8899aa
 for (const [param, option] of [
   ['style', 'house_style'],
+  ['top', 'house_top_floor'],
   ['facing', 'house_facing'],
   ['wall', 'house_color'],
   ['roof', 'roof_color'],
@@ -1043,7 +1082,7 @@ function wirePage() {
   bindSegmented('theme', (v) => setTheme(v === 'dark'));
   bindSegmented('sky', (v) => setSky(v as 'day' | 'dusk' | 'night'));
   bindSegmented('width', (v) => (stage.dataset.width = v));
-  pressed('home', homeLayout === 'flat' || homeLayout === 'bare' ? homeLayout : 'floors');
+  pressed('home', homeLayout && ['attic', 'flat', 'bare'].includes(homeLayout) ? homeLayout : 'floors');
   bindSegmented('home', (v) => {
     // The registries are read once, like Home Assistant's; a new layout needs a fresh page.
     const url = new URL(location.href);

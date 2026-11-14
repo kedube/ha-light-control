@@ -17,8 +17,8 @@ after(async () => {
   await server?.close();
 });
 
-async function open(query = '', setup) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, reducedMotion: 'reduce' });
+async function open(query = '', setup, motion = 'reduce') {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, reducedMotion: motion });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -154,6 +154,51 @@ describe('The 3D house', () => {
     const page = await open('&country=DE');
     assert.equal(await page.locator('lc-house').evaluate((el) => el.styleName), 'european');
     await page.close();
+  });
+
+  it('builds the attic into the roof, behind the dormers, and as a full floor when asked', async () => {
+    const page = await open('&home=attic&drop=basement&style=capecod');
+    const stories = () =>
+      page.locator('lc-house').evaluate((el) => ({ loft: el.model.loft, floors: el.model.plan.stories.length }));
+    assert.deepEqual(await stories(), { loft: 2, floors: 3 }, 'two floors of walls, and the attic in the roof');
+    await page.evaluate(() => {
+      const card = document.querySelector('light-control-card');
+      card.setConfig({ type: 'custom:light-control-card', house_style: 'capecod', house_top_floor: 'full' });
+    });
+    await page.waitForFunction(
+      () => document.querySelector('light-control-card').shadowRoot.querySelector('lc-house').model.loft === -1,
+    );
+    // The attic can still be opened and its rooms picked.
+    await page.locator('light-control-card nav.tabs .tab[aria-label="Attic"]').click();
+    await page.locator('lc-house .hit[aria-label^="Guest Room"]').first().waitFor();
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
+
+  it('brings the sky to life when it moves, and keeps it still when motion is reduced', async () => {
+    const happen = async (page, what) => {
+      await page.locator('lc-house').evaluate((el, list) => list.forEach((x) => el.happen(x)), what.split(','));
+      return page.waitForFunction(
+        (key) => {
+          const scene = document.querySelector('light-control-card').shadowRoot.querySelector('lc-house').life.scene;
+          return scene[key] > 0;
+        },
+        what === 'meteor' ? 'meteorCount' : 'birdCount',
+        { timeout: 8000 },
+      );
+    };
+    const page = await open('&sky=day', undefined, 'no-preference');
+    await happen(page, 'gull,songbird');
+    await page.close();
+    const dark = await open('&sky=night', undefined, 'no-preference');
+    await happen(dark, 'meteor');
+    assert.deepEqual(dark.errors, []);
+    await dark.close();
+    const still = await open('&sky=day');
+    await still.locator('lc-house').evaluate((el) => el.happen('gull'));
+    await still.waitForTimeout(600);
+    assert.equal(await still.locator('lc-house').evaluate((el) => el.life.scene.birdCount), 0, 'nothing flies');
+    await still.close();
   });
 
   it('still works where there is no WebGL', async () => {

@@ -115,6 +115,12 @@ export const en = {
   opt_style_contemporary: 'Contemporary',
   opt_style_brick: 'Brick',
   opt_style_european: 'European: render and clay tiles',
+  cfg_house_top_floor: 'Top floor',
+  opt_top_floor_auto: 'As the house style has it',
+  opt_top_floor_roof: 'Under the roof',
+  opt_top_floor_full: 'A full story',
+  help_house_top_floor:
+    'Under the roof, the top floor has sloping ceilings and dormer windows. Left to the style, a floor named Attic or Loft is always built there.',
   cfg_house_facing: 'The front of the house faces',
   opt_facing_auto: 'Toward the sun',
   opt_facing_n: 'North',

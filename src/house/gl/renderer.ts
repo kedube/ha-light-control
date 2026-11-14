@@ -28,6 +28,7 @@ import {
   SCENE_VERT,
   SCREEN_VERT,
 } from './shaders.ts';
+import { BIRD_FLOATS, GLOW_FLOATS, LIGHT_FLOATS, METEOR_FLOATS, PUFF_FLOATS, type Scene } from '../life.ts';
 
 /** How many frames go into a finished picture. */
 export const SAMPLES = 32;
@@ -50,6 +51,8 @@ export interface View {
   skyUp: Vec3;
   /** The angle one pixel of sky covers, in radians. */
   pixelAngle: number;
+  /** The picture's size in CSS pixels, which is how life around the house is placed on it. */
+  css: [number, number];
 }
 
 interface Program {
@@ -82,8 +85,8 @@ const UNIT = {
 export interface Weather {
   /** Seconds, for the drift of the clouds and the twinkling of the stars. */
   time: number;
-  /** A shooting star across the picture, from (x0, y0) to (x1, y1), and how far along it is (0–1). */
-  meteor?: { from: [number, number]; to: [number, number]; age: number };
+  /** Birds, shooting stars and the rest of what lives around the house at this moment. */
+  life?: Scene;
 }
 
 const CLOUD_SIZE = 1024;
@@ -672,10 +675,26 @@ export class Renderer {
     );
     gl.uniform3f(u('uCloudDark'), up[0] * dim, up[1] * dim, up[2] * dim);
     gl.uniform1f(u('uTime'), t % 4096);
-    const meteor = weather.meteor;
-    gl.uniform4f(u('uMeteor'), meteor?.from[0] ?? 0, meteor?.from[1] ?? 0, meteor?.to[0] ?? 0, meteor?.to[1] ?? 0);
-    gl.uniform1f(u('uMeteorAge'), meteor ? meteor.age : -1);
+    // Life around the house, hidden where the house is nearer than it.
+    this.bind(UNIT.depth, this.depthTexture);
+    gl.uniform1i(u('uDepth'), UNIT.depth);
+    gl.uniform2f(u('uCss'), view.css[0], view.css[1]);
+    gl.uniform2f(u('uPictureSize'), this.width, this.height);
+    const life = weather.life;
+    const list = (name: string, count: number, data: Float32Array | undefined, floats: number) => {
+      gl.uniform1i(u(`${name}Count`), data ? count : 0);
+      // A length of 0 would mean the whole array.
+      if (data && count) gl.uniform4fv(u(`${name}s[0]`), data, 0, count * floats);
+    };
+    list('uBird', life?.birdCount ?? 0, life?.birds, BIRD_FLOATS);
+    list('uGlow', life?.glowCount ?? 0, life?.glows, GLOW_FLOATS);
+    list('uPuff', life?.puffCount ?? 0, life?.puffs, PUFF_FLOATS);
+    list('uMeteor', life?.meteorCount ?? 0, life?.meteors, METEOR_FLOATS);
+    list('uLight', life?.lightCount ?? 0, life?.lights, LIGHT_FLOATS);
+    gl.uniform4fv(u('uTrail[0]'), life?.trail ?? new Float32Array(8));
     this.screen();
+    // The depth is drawn into again for the next picture of the house.
+    this.bind(UNIT.depth, null);
   }
 
   /** How many groups the shaders can hide. */

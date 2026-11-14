@@ -104,6 +104,12 @@ export const de: Translation = {
   opt_style_contemporary: 'Modern',
   opt_style_brick: 'Backstein',
   opt_style_european: 'Europäisch: Putz und Dachziegel',
+  cfg_house_top_floor: 'Oberstes Stockwerk',
+  opt_top_floor_auto: 'Wie beim Baustil üblich',
+  opt_top_floor_roof: 'Unter dem Dach',
+  opt_top_floor_full: 'Als Vollgeschoss',
+  help_house_top_floor:
+    'Unter dem Dach hat das oberste Stockwerk Dachschrägen und Gauben. Entscheidet der Baustil, liegt ein Stockwerk namens Dachgeschoss oder Dachboden immer dort.',
   cfg_house_facing: 'Die Vorderseite des Hauses zeigt nach',
   opt_facing_auto: 'Zur Sonne',
   opt_facing_n: 'Norden',

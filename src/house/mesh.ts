@@ -34,13 +34,139 @@ type UV = readonly [number, number];
 /** Which faces of a box to leave out: they are hidden against something else. */
 export const SKIP = { bottom: 1, top: 2, left: 4, right: 8, back: 16, front: 32 } as const;
 
+/** A cut through space, in plan space: what lies where n·p ≤ d is kept. */
+export interface Plane {
+  n: P;
+  d: number;
+  /** Leave the cut open instead of closing it with a face: for a cut that something else covers. */
+  open?: boolean;
+}
+
+/** A convex space: everything inside all of its planes. */
+export type Region = readonly Plane[];
+
+type Settings = Partial<
+  Pick<MeshBuilder, 'material' | 'color' | 'room' | 'emit' | 'group' | 'flags' | 'side' | 'blend' | 'clip'>
+>;
+
+/** One face of a convex solid. `paint` are the settings it is drawn with, if not the current ones. */
+export interface SolidFace {
+  points: readonly P[];
+  normal: P;
+  uvs?: readonly UV[];
+  paint?: Settings;
+  /** Left out, though it still bounds the solid: it is hidden against something else. */
+  skip?: boolean;
+}
+
+/** A corner of a polygon being cut: where it is, its texture coordinates and, on a rounded shape, its normal. */
+interface Corner {
+  p: P;
+  uv: UV;
+  n?: P;
+}
+
+interface Face {
+  ring: Corner[];
+  normal: P;
+  paint?: Settings;
+  hidden?: boolean;
+  /** A face that closes a cut. */
+  cap?: boolean;
+}
+
+const EPS = 1e-7;
+
+/** How far a point is beyond a plane: positive is cut away. */
+const beyond = (plane: Plane, p: P): number => plane.n[0] * p[0] + plane.n[1] * p[1] + plane.n[2] * p[2] - plane.d;
+
+function between(a: Corner, b: Corner, t: number): Corner {
+  const mix = (u: number, v: number) => u + (v - u) * t;
+  return {
+    p: [mix(a.p[0], b.p[0]), mix(a.p[1], b.p[1]), mix(a.p[2], b.p[2])],
+    uv: [mix(a.uv[0], b.uv[0]), mix(a.uv[1], b.uv[1])],
+    n: a.n && b.n ? [mix(a.n[0], b.n[0]), mix(a.n[1], b.n[1]), mix(a.n[2], b.n[2])] : undefined,
+  };
+}
+
+/** What a plane leaves of a convex polygon. The points where its outline meets the plane are added to `cut`. */
+function slice(ring: Corner[], plane: Plane, cut?: P[]): Corner[] {
+  const side = ring.map((c) => beyond(plane, c.p));
+  if (side.every((v) => v <= EPS)) return ring;
+  const out: Corner[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const j = (i + 1) % ring.length;
+    const a = side[i];
+    const b = side[j];
+    if (a <= EPS) {
+      out.push(ring[i]);
+      if (a >= -EPS) cut?.push(ring[i].p);
+    }
+    if ((a < -EPS && b > EPS) || (a > EPS && b < -EPS)) {
+      const corner = between(ring[i], ring[j], a / (a - b));
+      out.push(corner);
+      cut?.push(corner.p);
+    }
+  }
+  return out;
+}
+
+/** The points of a cut, put in order around it. */
+function capRing(points: P[], normal: P): P[] {
+  // Points a few millimeters apart are one corner: the faces of a solid need not meet exactly.
+  const unique: P[] = [];
+  for (const p of points) {
+    if (!unique.some((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 0.0045)) unique.push(p);
+  }
+  if (unique.length < 3) return [];
+  const center: Vec3 = [0, 0, 0];
+  for (const p of unique) for (let i = 0; i < 3; i++) center[i] += p[i] / unique.length;
+  const n: Vec3 = [normal[0], normal[1], normal[2]];
+  const u = normalize(cross(n, Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+  const v = cross(n, u);
+  const angle = (p: P) => {
+    const d = sub([p[0], p[1], p[2]], center);
+    return Math.atan2(dot(d, v), dot(d, u));
+  };
+  return unique.sort((a, b) => angle(a) - angle(b));
+}
+
+/** What a region leaves of a convex solid: its faces cut back, and a new face over every cut. */
+function cutSolid(faces: Face[], region: Region): Face[] {
+  let current = faces;
+  for (const plane of region) {
+    const cut: P[] = [];
+    let cuts = false;
+    const next: Face[] = [];
+    for (const face of current) {
+      const ring = slice(face.ring, plane, cut);
+      if (ring !== face.ring) cuts = true;
+      if (ring.length >= 3) next.push(ring === face.ring ? face : { ...face, ring });
+    }
+    if (cuts) {
+      const ring = capRing(cut, plane.n);
+      if (ring.length >= 3) {
+        next.push({
+          ring: ring.map((p) => ({ p, uv: surfaceUv(p, plane.n) })),
+          normal: plane.n,
+          cap: true,
+          hidden: plane.open,
+        });
+      }
+    }
+    current = next;
+    if (!current.length) break;
+  }
+  return current;
+}
+
 export class MeshBuilder {
   private buffer = new ArrayBuffer(VERTEX_BYTES * 4096);
   private f32 = new Float32Array(this.buffer);
   private u8 = new Uint8Array(this.buffer);
   private i8 = new Int8Array(this.buffer);
   private count = 0;
-  private readonly solid: number[] = [];
+  private readonly opaque: number[] = [];
   private readonly clear: number[] = [];
 
   material = 0;
@@ -56,6 +182,11 @@ export class MeshBuilder {
   side = 0;
   /** Draw into the see-through layer. */
   blend = false;
+  /**
+   * Only what lies inside one of these regions is drawn, as under the slopes of a roof; shapes
+   * that reach beyond them are cut off there. The regions must not overlap.
+   */
+  clip: readonly Region[] | null = null;
 
   get vertexCount(): number {
     return this.count;
@@ -68,10 +199,7 @@ export class MeshBuilder {
   }
 
   /** Runs `draw` with some settings changed, then puts them back. */
-  with(
-    settings: Partial<Pick<MeshBuilder, 'material' | 'color' | 'room' | 'emit' | 'group' | 'flags' | 'side' | 'blend'>>,
-    draw: () => void,
-  ): void {
+  with(settings: Settings, draw: () => void): void {
     const saved = {
       material: this.material,
       color: this.color,
@@ -81,6 +209,7 @@ export class MeshBuilder {
       flags: this.flags,
       side: this.side,
       blend: this.blend,
+      clip: this.clip,
     };
     Object.assign(this, settings);
     draw();
@@ -123,7 +252,7 @@ export class MeshBuilder {
   }
 
   private triangle(a: number, b: number, c: number): void {
-    (this.blend ? this.clear : this.solid).push(a, b, c);
+    (this.blend ? this.clear : this.opaque).push(a, b, c);
   }
 
   /**
@@ -131,12 +260,82 @@ export class MeshBuilder {
    * either way; `uvs` default to the surface's own coordinates in meters.
    */
   poly(points: readonly P[], normal: P, uvs?: readonly UV[]): void {
+    if (!this.clip) {
+      this.face(points, normal, uvs);
+      return;
+    }
+    const start: Corner[] = points.map((p, i) => ({ p, uv: uvs?.[i] ?? surfaceUv(p, normal) }));
+    for (const region of this.clip) {
+      let ring = start;
+      for (const plane of region) {
+        ring = slice(ring, plane);
+        if (ring.length < 3) break;
+      }
+      if (ring.length >= 3) {
+        this.face(
+          ring.map((c) => c.p),
+          normal,
+          ring.map((c) => c.uv),
+        );
+      }
+    }
+  }
+
+  /** Whether a box lies wholly inside one of the regions drawing is clipped to, so nothing of it is cut. */
+  private contained(x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): boolean {
+    if (!this.clip) return true;
+    return this.clip.some((region) =>
+      region.every((plane) => {
+        for (const x of [x0, x1])
+          for (const y of [y0, y1]) for (const z of [z0, z1]) if (beyond(plane, [x, y, z]) > EPS) return false;
+        return true;
+      }),
+    );
+  }
+
+  /**
+   * A convex solid, given by its faces. Where drawing is clipped, the solid is cut off and closed
+   * with a new face over the cut, drawn with `cap` (or the current settings).
+   */
+  solid(faces: readonly SolidFace[], cap?: Settings): void {
+    const draw = (settings: Settings | undefined, fn: () => void) => (settings ? this.with(settings, fn) : fn());
+    if (!this.clip) {
+      for (const f of faces) if (!f.skip) draw(f.paint, () => this.face(f.points, f.normal, f.uvs));
+      return;
+    }
+    const start: Face[] = faces.map((f) => ({
+      ring: f.points.map((p, i) => ({ p, uv: f.uvs?.[i] ?? surfaceUv(p, f.normal) })),
+      normal: f.normal,
+      paint: f.paint,
+      hidden: f.skip,
+    }));
+    for (const region of this.clip) {
+      for (const f of cutSolid(start, region)) {
+        if (f.hidden) continue;
+        draw(f.cap ? cap : f.paint, () =>
+          this.face(
+            f.ring.map((c) => c.p),
+            f.normal,
+            f.ring.map((c) => c.uv),
+          ),
+        );
+      }
+    }
+  }
+
+  private face(points: readonly P[], normal: P, uvs?: readonly UV[]): void {
     const n = normalize(toWorld(normal[0], normal[1], normal[2]));
     const world = points.map((p) => toWorld(p[0], p[1], p[2]));
     const coords = uvs ?? points.map((p) => surfaceUv(p, normal));
     const ids = world.map((p, i) => this.vertex(p, n, coords[i]));
-    // Wind the triangles so they face along the normal.
-    const facing = dot(cross(sub(world[1], world[0]), sub(world[2], world[0])), n) >= 0;
+    // Wind the triangles so they face along the normal. The whole outline decides which way it
+    // turns: its first corners may lie almost in a line.
+    const turn: Vec3 = [0, 0, 0];
+    for (let i = 1; i < world.length - 1; i++) {
+      const part = cross(sub(world[i], world[0]), sub(world[i + 1], world[0]));
+      for (let k = 0; k < 3; k++) turn[k] += part[k];
+    }
+    const facing = dot(turn, n) >= 0;
     for (let i = 1; i < ids.length - 1; i++) {
       if (facing) this.triangle(ids[0], ids[i], ids[i + 1]);
       else this.triangle(ids[0], ids[i + 1], ids[i]);
@@ -149,21 +348,48 @@ export class MeshBuilder {
 
   /** A quad with its own normal at each corner, for rounded shapes. */
   smoothQuad(points: readonly [P, P, P, P], normals: readonly [P, P, P, P], uvs: readonly [UV, UV, UV, UV]): void {
+    this.smoothPoly(points, normals, uvs);
+  }
+
+  /** A convex polygon with its own normal at each corner. */
+  private smoothPoly(points: readonly P[], normals: readonly P[], uvs: readonly UV[]): void {
+    if (!this.clip) {
+      this.smoothFace(points, normals, uvs);
+      return;
+    }
+    const start: Corner[] = points.map((p, i) => ({ p, uv: uvs[i], n: normals[i] }));
+    for (const region of this.clip) {
+      let ring = start;
+      for (const plane of region) {
+        ring = slice(ring, plane);
+        if (ring.length < 3) break;
+      }
+      if (ring.length >= 3) {
+        this.smoothFace(
+          ring.map((c) => c.p),
+          ring.map((c) => c.n!),
+          ring.map((c) => c.uv),
+        );
+      }
+    }
+  }
+
+  private smoothFace(points: readonly P[], normals: readonly P[], uvs: readonly UV[]): void {
     const world = points.map((p) => toWorld(p[0], p[1], p[2]));
     const ns = normals.map((n) => normalize(toWorld(n[0], n[1], n[2])));
     const ids = world.map((p, i) => this.vertex(p, ns[i], uvs[i]));
-    const mean = normalize([
-      ns[0][0] + ns[1][0] + ns[2][0] + ns[3][0],
-      ns[0][1] + ns[1][1] + ns[2][1] + ns[3][1],
-      ns[0][2] + ns[1][2] + ns[2][2] + ns[3][2],
-    ]);
-    const facing = dot(cross(sub(world[1], world[0]), sub(world[2], world[0])), mean) >= 0;
-    if (facing) {
-      this.triangle(ids[0], ids[1], ids[2]);
-      this.triangle(ids[0], ids[2], ids[3]);
-    } else {
-      this.triangle(ids[0], ids[2], ids[1]);
-      this.triangle(ids[0], ids[3], ids[2]);
+    const sum: Vec3 = [0, 0, 0];
+    for (const n of ns) for (let i = 0; i < 3; i++) sum[i] += n[i];
+    const mean = normalize(sum);
+    const turn: Vec3 = [0, 0, 0];
+    for (let i = 1; i < world.length - 1; i++) {
+      const part = cross(sub(world[i], world[0]), sub(world[i + 1], world[0]));
+      for (let k = 0; k < 3; k++) turn[k] += part[k];
+    }
+    const facing = dot(turn, mean) >= 0;
+    for (let i = 1; i < ids.length - 1; i++) {
+      if (facing) this.triangle(ids[0], ids[i], ids[i + 1]);
+      else this.triangle(ids[0], ids[i + 1], ids[i]);
     }
   }
 
@@ -176,6 +402,34 @@ export class MeshBuilder {
     if (y1 < y0) [y0, y1] = [y1, y0];
     if (z1 < z0) [z0, z1] = [z1, z0];
     const flat = (x: number, y: number): UV => (grainY ? [y, x] : [x, y]);
+    if (this.clip && !this.contained(x0, y0, z0, x1, y1, z1)) {
+      // Cut off by a clip plane: the box is closed again over the cut.
+      const level = (z: number, up: number, hidden: number): SolidFace => ({
+        points: [
+          [x0, y0, z],
+          [x1, y0, z],
+          [x1, y1, z],
+          [x0, y1, z],
+        ],
+        normal: [0, 0, up],
+        uvs: [flat(x0, y0), flat(x1, y0), flat(x1, y1), flat(x0, y1)],
+        skip: Boolean(skip & hidden),
+      });
+      const wall = (a: P, b: P, c: P, d: P, normal: P, hidden: number): SolidFace => ({
+        points: [a, b, c, d],
+        normal,
+        skip: Boolean(skip & hidden),
+      });
+      this.solid([
+        level(z1, 1, SKIP.top),
+        level(z0, -1, SKIP.bottom),
+        wall([x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1], [0, 1, 0], SKIP.front),
+        wall([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0], SKIP.back),
+        wall([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], [1, 0, 0], SKIP.right),
+        wall([x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1], [-1, 0, 0], SKIP.left),
+      ]);
+      return;
+    }
     if (!(skip & SKIP.top))
       this.quad(
         [x0, y0, z1],
@@ -209,7 +463,8 @@ export class MeshBuilder {
     if (y1 < y0) [y0, y1] = [y1, y0];
     if (z1 < z0) [z0, z1] = [z1, z0];
     r = Math.max(0.005, Math.min(r, (x1 - x0) / 2 - 0.001, (y1 - y0) / 2 - 0.001, (z1 - z0) / 2 - 0.001));
-    if (!(r > 0.004)) {
+    // A soft box that is cut off is drawn square, so the cut can be closed.
+    if (!(r > 0.004) || !this.contained(x0, y0, z0, x1, y1, z1)) {
       this.box(x0, y0, z0, x1, y1, z1);
       return;
     }
@@ -381,6 +636,21 @@ export class MeshBuilder {
       bumpy *
         (Math.sin(p[0] * 4.1 + phase[0]) * Math.sin(p[1] * 3.7 + phase[1]) +
           0.6 * Math.sin(p[2] * 5.3 + phase[2]) * Math.sin(p[0] * 2.9 + phase[1]));
+    if (
+      this.clip &&
+      !this.contained(cx - rx * 1.3, cy - ry * 1.3, cz - rz * 1.3, cx + rx * 1.3, cy + ry * 1.3, cz + rz * 1.3)
+    ) {
+      // Cut off by a clip plane: triangle by triangle.
+      const at = points.map((p): P => {
+        const k = push(p);
+        return [cx + p[0] * rx * k, cy + p[1] * ry * k, cz + p[2] * rz * k];
+      });
+      const out = points.map((p): P => [p[0] / rx, p[1] / ry, p[2] / rz]);
+      const uv = points.map((p): UV => [p[2] * 0.5 + 0.5, shade]);
+      for (const [a, b, c] of faces)
+        this.smoothPoly([at[a], at[b], at[c]], [out[a], out[b], out[c]], [uv[a], uv[b], uv[c]]);
+      return;
+    }
     const center = toWorld(cx, cy, cz);
     const world = points.map((p) => {
       const k = push(p);
@@ -399,17 +669,79 @@ export class MeshBuilder {
   }
 
   finish(): Mesh {
-    const indices = new Uint32Array(this.solid.length + this.clear.length);
-    indices.set(this.solid, 0);
-    indices.set(this.clear, this.solid.length);
+    const indices = new Uint32Array(this.opaque.length + this.clear.length);
+    indices.set(this.opaque, 0);
+    indices.set(this.clear, this.opaque.length);
     return {
       vertices: this.buffer.slice(0, this.count * VERTEX_BYTES),
       vertexCount: this.count,
       indices,
-      opaque: { start: 0, count: this.solid.length },
-      blended: { start: this.solid.length, count: this.clear.length },
+      opaque: { start: 0, count: this.opaque.length },
+      blended: { start: this.opaque.length, count: this.clear.length },
     };
   }
+}
+
+/** One flat side of a solid. `cut` marks a side that a clip plane made. */
+export interface Side3 {
+  points: [number, number, number][];
+  normal: [number, number, number];
+  cut: boolean;
+}
+
+/** The sides of a box, cut back to a region if one is given: a room under the slopes of a roof. */
+export function boxSides(
+  x0: number,
+  y0: number,
+  z0: number,
+  x1: number,
+  y1: number,
+  z1: number,
+  region?: Region,
+): Side3[] {
+  const side = (normal: P, ...points: P[]): Face => ({ ring: points.map((p) => ({ p, uv: [0, 0] })), normal });
+  let faces: Face[] = [
+    side([0, 0, -1], [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]),
+    side([0, 0, 1], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]),
+    side([0, 1, 0], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]),
+    side([0, -1, 0], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]),
+    side([1, 0, 0], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]),
+    side([-1, 0, 0], [x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1]),
+  ];
+  if (region) faces = cutSolid(faces, region);
+  return faces.map((f) => ({
+    points: f.ring.map((c): [number, number, number] => [c.p[0], c.p[1], c.p[2]]),
+    normal: [f.normal[0], f.normal[1], f.normal[2]],
+    cut: Boolean(f.cap),
+  }));
+}
+
+/** The outline of a solid: its corners, and the edges between them. */
+export interface Wire {
+  points: [number, number, number][];
+  edges: [number, number][];
+}
+
+export function wireOf(sides: readonly Side3[]): Wire {
+  const points: [number, number, number][] = [];
+  const edges: [number, number][] = [];
+  const seen = new Set<string>();
+  const index = (p: [number, number, number]) => {
+    let i = points.findIndex((q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 1e-4);
+    if (i < 0) i = points.push(p) - 1;
+    return i;
+  };
+  for (const side of sides) {
+    const ids = side.points.map(index);
+    ids.forEach((a, k) => {
+      const b = ids[(k + 1) % ids.length];
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      if (a === b || seen.has(key)) return;
+      seen.add(key);
+      edges.push([a, b]);
+    });
+  }
+  return { points, edges };
 }
 
 /** Surface coordinates in meters: across the face and up it (or x and y for a floor). */

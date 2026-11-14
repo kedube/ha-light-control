@@ -104,6 +104,12 @@ export const fr: Translation = {
   opt_style_contemporary: 'Contemporain',
   opt_style_brick: 'Brique',
   opt_style_european: 'Européen : enduit et tuiles',
+  cfg_house_top_floor: 'Dernier étage',
+  opt_top_floor_auto: 'Selon le style de la maison',
+  opt_top_floor_roof: 'Sous le toit',
+  opt_top_floor_full: 'Un étage complet',
+  help_house_top_floor:
+    'Sous le toit, le dernier étage a des plafonds en pente et des lucarnes. Si le style décide, un étage nommé Grenier ou Combles s’y trouve toujours.',
   cfg_house_facing: 'Orientation de la façade',
   opt_facing_auto: 'Vers le soleil',
   opt_facing_n: 'Nord',

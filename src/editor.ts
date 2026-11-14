@@ -58,6 +58,14 @@ function buildSchema(): Schema[] {
           ]),
         },
         {
+          name: 'house_top_floor',
+          selector: select([
+            ['auto', 'opt_top_floor_auto'],
+            ['roof', 'opt_top_floor_roof'],
+            ['full', 'opt_top_floor_full'],
+          ]),
+        },
+        {
           name: 'house_colors',
           type: 'grid',
           flatten: true,
@@ -163,6 +171,7 @@ function buildSchema(): Schema[] {
 const HELPERS: Record<string, StringKey> = {
   door_color: 'help_house_color',
   animate_sky: 'help_animate_sky',
+  house_top_floor: 'help_house_top_floor',
   house_facing: 'help_house_facing',
   weather_entity: 'help_weather_entity',
   outlet_detection: 'help_outlet_detection',

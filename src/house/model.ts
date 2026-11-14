@@ -2,9 +2,10 @@
 // of looking at it (from outside, or with one floor opened) what can be picked and what to frame.
 
 import type { RGB } from '../color.ts';
+import type { Stage } from './life.ts';
 import { toWorld } from './math.ts';
-import type { Mesh } from './mesh.ts';
-import type { HousePlan } from './plan.ts';
+import { boxSides, wireOf, type Mesh, type Region, type Wire } from './mesh.ts';
+import { span, type HousePlan, type Side } from './plan.ts';
 import {
   box,
   Context,
@@ -20,13 +21,15 @@ import {
   type RoomSlot,
   type Spill,
 } from './model/context.ts';
-import { buildInterior } from './model/interior.ts';
-import { at, buildShell, frameOf, span, WING_FLOOR, wingHeight, type Side } from './model/shell.ts';
 import { buildEntry } from './model/entry.ts';
-import { roofHeight } from './model/roof.ts';
+import { buildInterior } from './model/interior.ts';
+import { chimneySpot, under, WING_FLOOR, wingHeight } from './model/massing.ts';
+import { buildShell } from './model/shell.ts';
 import { buildSite, layoutSite } from './model/site.ts';
+import { at, frameOf } from './model/walls.ts';
 
 export type { Box, Fixture, Groups, ModelInput, Point, RoomInput, LightInput } from './model/context.ts';
+export type { TopFloor } from './model/massing.ts';
 export { fixtureKind, type FixtureKind } from './fixtures.ts';
 
 /** Something that can be picked: the points around it, in plan space. */
@@ -40,13 +43,18 @@ export interface Anchor {
   at: Point;
 }
 
+/** A room's space as a wire frame: a box, or under a roof what the slopes leave of one. */
+export type Volume = Wire;
+
+const solid = (b: Box, region?: Region): Volume => wireOf(boxSides(b.x0, b.y0, b.z0, b.x1, b.y1, b.z1, region));
+
 /** One way of looking at the house. */
 export interface ViewData {
   hits: Hit[];
   /** Where each room's label goes. */
   anchors: Anchor[];
   /** A room's volume, for the selection outline. */
-  volumes: Map<string, Box>;
+  volumes: Map<string, Volume>;
   /** What the camera frames. */
   frame: Box[];
   /** Groups up to this one are showing; the rest have lifted away. */
@@ -70,6 +78,10 @@ export interface Model {
   radius: number;
   /** The highest point of the house, for keeping the title clear of it. */
   top: number;
+  /** The index of the story that is built into the roof, or -1 when every floor has walls of its own. */
+  loft: number;
+  /** Where birds can fly, fireflies glow and smoke rises, around the house. */
+  stage: Stage;
 }
 
 export function buildModel(input: ModelInput): Model {
@@ -94,9 +106,10 @@ export function buildModel(input: ModelInput): Model {
 
   const W = plan.width;
   const D = plan.depth;
-  const top = c.top;
-  const roofBase = top ? top.z + WALL_H + SLAB : plan.base;
-  const ridge = roofBase + roofHeight(input.style, D);
+  const roof = c.roof;
+  const ridge = roof.ridge;
+  // What the slopes of the roof leave of a room under them.
+  const slopes = roof.loft ? under(roof)?.[0] : undefined;
   const wing = plan.wing;
   const wingBox = wing
     ? box(wing.rect.x0, wing.rect.y0, 0, wing.rect.x1, wing.rect.y1, WING_FLOOR + wingHeight(plan) + 1.6)
@@ -107,19 +120,52 @@ export function buildModel(input: ModelInput): Model {
   const exterior: ViewData = {
     hits: [],
     anchors: [],
-    volumes: new Map(zones),
+    volumes: new Map([...zones].map(([id, volume]) => [id, solid(volume)])),
     frame: [],
     cut: c.groups.count,
     story: -1,
   };
+  const edge = (side: Side) => (side === 'front' ? D : side === 'right' ? W : 0);
   for (const story of plan.stories) {
     for (const cell of story.cells) {
       if (!cell.id) continue;
       const r = cell.rect;
+      if (story === roof.loft && slopes) {
+        // A room under the roof is picked by the roof over it, and by its wall in a gable end.
+        const sides = boxSides(r.x0, r.y0, story.z - SLAB, r.x1, r.y1, ridge, slopes);
+        exterior.volumes.set(cell.id, wireOf(sides));
+        for (const face of sides) {
+          const outside = (['front', 'right', 'back', 'left'] as Side[]).find((side) => {
+            const along = side === 'front' || side === 'back' ? 1 : 0;
+            const out = side === 'front' || side === 'right' ? 1 : -1;
+            return (
+              span(cell, plan, side) &&
+              face.normal[along] === out &&
+              Math.abs(face.points[0][along] - edge(side)) < 0.01
+            );
+          });
+          if (!face.cut && !outside) continue;
+          const n = face.normal;
+          const length = Math.hypot(n[0], n[1], n[2]);
+          const lift = (p: Point): Point => [
+            p[0] + (n[0] / length) * 0.05,
+            p[1] + (n[1] / length) * 0.05,
+            p[2] + (n[2] / length) * 0.05,
+          ];
+          exterior.hits.push({ roomId: cell.id, points: face.points.map(lift) });
+          // The label goes on the roof or the gable, not on the low wall under the eaves.
+          const heights = face.points.map((p) => p[2]);
+          if (!face.cut && Math.max(...heights) - Math.min(...heights) < 1.2) continue;
+          const middle: Point = [0, 0, 0];
+          for (const p of face.points) for (let i = 0; i < 3; i++) middle[i] += p[i] / face.points.length;
+          exterior.anchors.push({ roomId: cell.id, at: lift(lift(middle)) });
+        }
+        continue;
+      }
       // A basement shows as the strip of foundation above the grass.
       const z0 = story.basement ? 0 : story.z - SLAB;
       const z1 = story.basement ? plan.base - SLAB : story.z + WALL_H;
-      exterior.volumes.set(cell.id, box(r.x0, r.y0, z0, r.x1, r.y1, z1));
+      exterior.volumes.set(cell.id, solid(box(r.x0, r.y0, z0, r.x1, r.y1, z1)));
       for (const side of ['front', 'right', 'back', 'left'] as Side[]) {
         const range = span(cell, plan, side);
         if (!range) continue;
@@ -140,7 +186,7 @@ export function buildModel(input: ModelInput): Model {
       roomId: wing.id,
       at: [(wing.rect.x0 + wing.rect.x1) / 2, (wing.rect.y0 + wing.rect.y1) / 2, body.z1 - 0.2],
     });
-    exterior.volumes.set(wing.id, body);
+    exterior.volumes.set(wing.id, solid(body));
   }
   for (const [roomId, volume] of zones) {
     exterior.hits.push({ roomId, points: corners({ ...volume, z1: 0.3 }) });
@@ -166,18 +212,23 @@ export function buildModel(input: ModelInput): Model {
       cut: c.groups.lower[story.index],
       story: story.index,
     };
+    // Under the roof, a room's walls are cut lower toward the eaves, where the slope comes down.
+    const region = story === roof.loft ? slopes : undefined;
     const add = (id: string, volume: Box) => {
-      view.hits.push({ roomId: id, points: corners(volume) });
+      const wire = solid(volume, region);
+      view.hits.push({ roomId: id, points: wire.points });
       view.anchors.push({
         roomId: id,
         at: [(volume.x0 + volume.x1) / 2, (volume.y0 + volume.y1) / 2, volume.z0 + 1.5],
       });
-      view.volumes.set(id, volume);
+      view.volumes.set(id, wire);
     };
     for (const cell of story.cells) {
       if (cell.id) add(cell.id, box(cell.rect.x0, cell.rect.y0, story.z, cell.rect.x1, cell.rect.y1, story.z + CUT_H));
     }
     view.frame.push(box(0, 0, story.z - SLAB, W, D, story.z + WALL_H + 0.3));
+    // The gable end left standing at the back reaches the ridge.
+    if (region && roof.form === 'gable') view.frame.push(box(0, D / 2, story.z, W, D / 2, ridge));
     if (story.ground) {
       if (wing?.id)
         add(wing.id, box(wing.rect.x0, wing.rect.y0, WING_FLOOR, wing.rect.x1, wing.rect.y1, WING_FLOOR + CUT_H));
@@ -185,11 +236,29 @@ export function buildModel(input: ModelInput): Model {
       // The garden stays in the picture around the ground floor, and can still be picked.
       for (const [roomId, volume] of zones) {
         view.hits.push({ roomId, points: corners({ ...volume, z1: 0.3 }) });
-        view.volumes.set(roomId, volume);
+        view.volumes.set(roomId, solid(volume));
       }
     }
     return view;
   });
+
+  // Where life goes on around the house. The chimney's pots stand on its stack, above the roof.
+  const spot = chimneySpot(roof);
+  const low = roof.form === 'flat' || roof.form === 'shed';
+  const stage: Stage = {
+    center: [W / 2, D / 2, 0],
+    radius: Math.hypot(W, D) / 2 + 1,
+    ridge,
+    plot: { x0: site.box.x0, y0: site.box.y0, x1: site.box.x1, y1: site.box.y1 },
+    buildings: plan.stories.length ? [{ x0: 0, y0: 0, x1: W, y1: D }, ...(wing ? [wing.rect] : [])] : [],
+    chimney: plan.stories.length
+      ? [
+          (spot.x0 + spot.x1) / 2,
+          (spot.y0 + spot.y1) / 2,
+          ridge + (low ? 0.5 : 0.75) + (input.style.chimneyPots ? 0.6 : 0.42),
+        ]
+      : null,
+  };
 
   // A sphere around the plot and the roof, for the shadows.
   const cx = (site.box.x0 + site.box.x1) / 2;
@@ -208,6 +277,8 @@ export function buildModel(input: ModelInput): Model {
     center: toWorld(cx, cy, cz),
     radius,
     top: ridge + 0.9,
+    loft: roof.loft?.index ?? -1,
+    stage,
   };
 }
 

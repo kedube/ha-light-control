@@ -164,6 +164,23 @@ export type ColumnKind = 'square' | 'round' | 'pier' | 'turned' | 'steel';
 export type GardenKind =
   'formal' | 'cottage' | 'suburban' | 'ornate' | 'modern' | 'country' | 'mediterranean' | 'english';
 
+/** How the windows of a floor under the roof stand out of it: with a roof of their own, or as glass in the slope. */
+export type DormerKind = 'gable' | 'shed' | 'box' | 'skylight';
+
+/** A floor built into the roof, with sloping ceilings, instead of a full story under it. */
+export interface LoftStyle {
+  /**
+   * When the top floor goes under the roof: always, as in a story-and-a-half house; from the third
+   * floor up, as in a taller one; or only when it is an attic.
+   */
+  when: 'always' | 'third' | 'attic';
+  /** How far the outside walls rise above its floor before the roof begins, in meters. */
+  knee: number;
+  /** A roof with a floor under it is at least this steep. */
+  pitch: number;
+  dormer: DormerKind;
+}
+
 /** How the windows of a style look. */
 export interface WindowStyle {
   /** Width and height relative to an ordinary window. */
@@ -200,8 +217,8 @@ export interface HouseStyle {
   eave: number;
   /** A gable facing the front: over the door or at one end of the house. Width in meters. */
   crossGable?: { at: 'door' | 'left' | 'right'; width: number; pitch: number };
-  /** Windows standing out of the front of the roof. */
-  dormers?: boolean;
+  /** The floor under the roof; a roof too flat to live under has none. */
+  loft?: LoftStyle;
   /** Rafter ends showing under the eaves. */
   brackets?: boolean;
   foundation: Paint;
@@ -233,6 +250,7 @@ export const STYLES = {
     roofForm: 'gable',
     pitch: 0.72,
     eave: 0.45,
+    loft: { when: 'third', knee: 0.6, pitch: 0.85, dormer: 'gable' },
     foundation: paint(MAT.concrete, 150, 146, 138),
     door: [54, 74, 100],
     garageDoor: [236, 235, 230],
@@ -252,7 +270,7 @@ export const STYLES = {
     roofForm: 'gable',
     pitch: 1,
     eave: 0.22,
-    dormers: true,
+    loft: { when: 'always', knee: 0.2, pitch: 1, dormer: 'gable' },
     foundation: paint(MAT.stone, 136, 132, 124),
     door: [150, 46, 44],
     garageDoor: [240, 239, 234],
@@ -272,6 +290,7 @@ export const STYLES = {
     roofForm: 'gable',
     pitch: 0.46,
     eave: 0.85,
+    loft: { when: 'always', knee: 0.8, pitch: 0.62, dormer: 'shed' },
     brackets: true,
     foundation: paint(MAT.stone, 128, 120, 108),
     door: [112, 62, 40],
@@ -292,6 +311,7 @@ export const STYLES = {
     roofForm: 'hip',
     pitch: 0.36,
     eave: 0.75,
+    loft: { when: 'attic', knee: 0.3, pitch: 0.5, dormer: 'skylight' },
     foundation: paint(MAT.concrete, 156, 152, 144),
     door: [58, 96, 92],
     garageDoor: [234, 232, 224],
@@ -313,6 +333,7 @@ export const STYLES = {
     pitch: 0.52,
     eave: 0.8,
     crossGable: { at: 'door', width: 5, pitch: 0.52 },
+    loft: { when: 'always', knee: 0.8, pitch: 0.62, dormer: 'shed' },
     brackets: true,
     foundation: paint(MAT.stone, 124, 116, 104),
     door: [120, 68, 42],
@@ -334,6 +355,7 @@ export const STYLES = {
     pitch: 1.05,
     eave: 0.4,
     crossGable: { at: 'right', width: 4.4, pitch: 1.2 },
+    loft: { when: 'third', knee: 0.5, pitch: 1.05, dormer: 'gable' },
     brackets: true,
     foundation: paint(MAT.brick, 124, 78, 64),
     door: [126, 44, 52],
@@ -376,6 +398,7 @@ export const STYLES = {
     pitch: 0.9,
     eave: 0.4,
     crossGable: { at: 'left', width: 4.6, pitch: 0.95 },
+    loft: { when: 'third', knee: 0.8, pitch: 0.9, dormer: 'shed' },
     foundation: paint(MAT.stone, 140, 136, 128),
     door: [134, 92, 58],
     garageDoor: [240, 238, 232],
@@ -395,6 +418,7 @@ export const STYLES = {
     roofForm: 'hip',
     pitch: 0.4,
     eave: 0.55,
+    loft: { when: 'attic', knee: 0.3, pitch: 0.5, dormer: 'skylight' },
     foundation: paint(MAT.stucco, 206, 188, 160),
     door: [98, 64, 44],
     archedDoor: true,
@@ -417,6 +441,7 @@ export const STYLES = {
     pitch: 1.12,
     eave: 0.3,
     crossGable: { at: 'door', width: 4.2, pitch: 1.3 },
+    loft: { when: 'third', knee: 0.4, pitch: 1.12, dormer: 'gable' },
     foundation: paint(MAT.stone, 126, 118, 108),
     door: [88, 58, 40],
     archedDoor: true,
@@ -459,6 +484,7 @@ export const STYLES = {
     roofForm: 'gable',
     pitch: 0.9,
     eave: 0.3,
+    loft: { when: 'third', knee: 0.5, pitch: 0.9, dormer: 'box' },
     foundation: paint(MAT.brick, 112, 70, 58),
     door: [38, 72, 60],
     garageDoor: [228, 226, 218],
@@ -479,6 +505,7 @@ export const STYLES = {
     roofForm: 'gable',
     pitch: 0.9,
     eave: 0.5,
+    loft: { when: 'always', knee: 0.75, pitch: 0.95, dormer: 'gable' },
     foundation: paint(MAT.stucco, 168, 164, 156),
     door: [112, 76, 50],
     garageDoor: [222, 220, 212],

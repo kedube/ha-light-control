@@ -3,9 +3,9 @@
 
 import { MAT, PAINT, type HouseStyle } from '../materials.ts';
 import { SKIP, type Paint } from '../mesh.ts';
-import type { HousePlan, Rect } from '../plan.ts';
+import { frontDoor, type HousePlan, type Rect } from '../plan.ts';
 import type { Context } from './context.ts';
-import { frontDoor } from './shell.ts';
+import { FASCIA } from './massing.ts';
 
 export interface Entry {
   /** The floor in front of the door, at the height of the ground floor. */
@@ -350,7 +350,17 @@ export function buildEntry(c: Context, entry: Entry | null): void {
     }
   });
 
-  const top = base + 2.45;
+  // Where the roof begins right above the ground floor, whatever roofs the door has to fit in
+  // under the eaves: it stands a little lower if that is all it takes.
+  const roof = c.roof;
+  const low =
+    (roof.form === 'gable' || roof.form === 'hip') && (c.top === ground || roof.loft?.index === ground.index + 1);
+  const clear = low ? roof.top - style.eave * roof.pitch - FASCIA - base : Infinity;
+  // How far each kind of entry stands above the head of its posts.
+  const crown = wide ? 0.78 : style.entry === 'portico' ? 0.74 : style.entry === 'canopy' ? 0.14 : 0.42;
+  const room = clear - crown - 0.03;
+  const fits = room >= 2.3;
+  const top = base + (fits ? Math.min(2.45, room) : 2.45);
   const edge = r.y1 - 0.14;
   if (wide) {
     // Posts along the front, either side of the steps and at the corners.
@@ -447,8 +457,8 @@ export function buildEntry(c: Context, entry: Entry | null): void {
     if (style.roofForm !== 'flat') {
       for (const s of [-1.3, 1.3]) column(c, x + s, D + 1.45, base - 0.02, top, upper, lower);
     }
-  } else if (!style.crossGable || style.crossGable.at !== 'door') {
-    // A small hood on brackets.
+  } else if ((!style.crossGable || style.crossGable.at !== 'door') && fits) {
+    // A small hood on brackets, unless the eaves come down too low for one: then they shelter the door.
     m.with({ group: upper, room: 0, ...style.roof }, () =>
       m.quad(
         [x - 0.95, D, top + 0.42],

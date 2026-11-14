@@ -6,6 +6,7 @@ export type TapAction = 'toggle' | 'controls' | 'more-info';
 export type IconStyle = 'auto' | 'graphic' | 'entity';
 export type HouseStyleOption = 'auto' | StyleName;
 export type HouseFacing = 'auto' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+export type HouseTopFloor = 'auto' | 'roof' | 'full';
 /** A color in the YAML: '#rrggbb', '#rgb' or [r, g, b]. */
 export type ColorValue = string | number[];
 
@@ -18,6 +19,11 @@ export interface LightControlCardConfig {
   show_house?: boolean;
   /** How the 3D house is built; 'auto' follows the country Home Assistant is set to. */
   house_style?: HouseStyleOption;
+  /**
+   * Where the top floor is: under the roof, with sloping ceilings and dormer windows, or a full
+   * story with the roof above it. 'auto' follows the design, and puts an attic under the roof.
+   */
+  house_top_floor?: HouseTopFloor;
   /** Colors for the house, as '#rrggbb' or [r, g, b]; each defaults to the style's own. */
   house_color?: ColorValue;
   roof_color?: ColorValue;
@@ -69,6 +75,7 @@ export type ResolvedConfig = Required<
 export const DEFAULTS: Omit<ResolvedConfig, 'type'> = {
   show_house: true,
   house_style: 'auto',
+  house_top_floor: 'auto',
   house_facing: 'auto',
   sky_weather: true,
   animate_sky: true,
@@ -98,6 +105,7 @@ const ENUMS: Record<string, readonly string[]> = {
   tap_action: ['toggle', 'controls', 'more-info'],
   icon_style: ['auto', 'graphic', 'entity'],
   house_style: ['auto', ...STYLE_NAMES],
+  house_top_floor: ['auto', 'roof', 'full'],
   house_facing: ['auto', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'],
 };
 

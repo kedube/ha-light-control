@@ -16,18 +16,20 @@ import {
   type Camera,
   type Pose,
 } from '../house/camera.ts';
-import { Renderer, SAMPLES, type View, type Weather } from '../house/gl/renderer.ts';
+import { Renderer, SAMPLES, type View } from '../house/gl/renderer.ts';
+import { lensFor, Life, type Conditions, type Happening, type Scene } from '../house/life.ts';
 import { toWorld, type Vec3 } from '../house/math.ts';
 import { STYLES, tint, type HouseStyle, type StyleName } from '../house/materials.ts';
 import {
   buildModel,
   lightTables,
-  type Box,
   type LightState,
   type Model,
   type Point,
   type Tables,
+  type TopFloor,
   type ViewData,
+  type Volume,
 } from '../house/model.ts';
 import { planHouse, GROUND_ID, type HousePlan } from '../house/plan.ts';
 import { computeSky, skyMode, sunPosition, type Sky, type SunInfo } from '../house/sky.ts';
@@ -39,6 +41,7 @@ import { fireEvent } from '../utils.ts';
 export { skyMode, type SunInfo } from '../house/sky.ts';
 export { GROUND_ID } from '../house/plan.ts';
 export type { StyleName } from '../house/materials.ts';
+export type { TopFloor } from '../house/model.ts';
 
 export interface HouseLight {
   id: string;
@@ -66,6 +69,19 @@ export interface HouseRoom {
 export interface HouseFloor {
   id: string;
   level: number | null;
+  /** Named as an attic or a loft: such a floor is built into the roof. */
+  attic?: boolean;
+}
+
+/** What a weather entity says, for life around the house: smoke on cold days, birds sheltering from the rain. */
+export interface Climate {
+  /** In °C. */
+  temperature?: number;
+  /** Where the wind comes from, in compass degrees, and its speed in m/s. */
+  windBearing?: number;
+  windSpeed?: number;
+  /** Raining or snowing. */
+  wet?: boolean;
 }
 
 /** Colors that replace the style's own: the walls, the roof, the trim and the front door. */
@@ -149,9 +165,12 @@ export class LcHouse extends LitElement {
     selected: { attribute: false },
     sun: { attribute: false },
     styleName: { attribute: false },
+    topFloor: { attribute: false },
     colors: { attribute: false },
     facing: { attribute: false },
     clouds: { attribute: false },
+    climate: { attribute: false },
+    southern: { attribute: false },
     motion: { attribute: false },
     topInset: { type: Number },
     titleWidth: { type: Number },
@@ -173,13 +192,19 @@ export class LcHouse extends LitElement {
   declare sun?: SunInfo;
   /** How the house is built: siding, brick, render. */
   declare styleName: StyleName;
+  /** Whether the top floor is built into the roof; 'auto' leaves it to the design and the floor's name. */
+  declare topFloor: TopFloor;
   /** Colors that replace the style's own. */
   declare colors?: HouseColors;
   /** The compass direction the front of the house faces, in degrees; south by default. */
   declare facing: number;
   /** How much of the sky is clouded over, 0–1; fair weather when not given. */
   declare clouds?: number;
-  /** Whether the sky moves: clouds drift, stars twinkle. */
+  /** The weather, for the life around the house. */
+  declare climate?: Climate;
+  /** South of the equator, where the seasons are the other way round. */
+  declare southern: boolean;
+  /** Whether the sky moves: clouds drift, stars twinkle, birds fly by. */
   declare motion: boolean;
   /** Pixels at the top kept clear for the card's title. */
   declare topInset: number;
@@ -239,8 +264,8 @@ export class LcHouse extends LitElement {
   /** Where the sun is shown, which runs to where it really is when that jumps. */
   private sunShown?: SunAt;
   private lapse?: { from: SunAt; to: SunAt; start: number };
-  private meteor?: { from: [number, number]; to: [number, number]; start: number };
-  private nextMeteor = 0;
+  /** Birds, bats, fireflies, shooting stars and the rest of what goes on around the house. */
+  readonly life = new Life();
   /** Fingers on the house, and where the turn they are making began. */
   private pointers = new Map<number, { x: number; y: number }>();
   private grab?: { x: number; y: number; orbit: Orbit; spread: number; moved: boolean };
@@ -256,8 +281,10 @@ export class LcHouse extends LitElement {
     this.view = { kind: 'home' };
     this.selected = null;
     this.styleName = 'colonial';
+    this.topFloor = 'auto';
     this.facing = 180;
     this.motion = true;
+    this.southern = false;
     this.topInset = 0;
     this.titleWidth = 0;
     this.bottomInset = 0;
@@ -336,11 +363,19 @@ export class LcHouse extends LitElement {
   private planFor(): HousePlan {
     const indoor = this.rooms.filter((r) => !r.outdoor);
     const floorIds = new Set(this.floors.map((f) => f.id));
-    const key = JSON.stringify([this.floors.map((f) => [f.id, f.level]), indoor.map((r) => [r.id, r.type, r.floorId])]);
+    const key = JSON.stringify([
+      this.floors.map((f) => [f.id, f.level, Boolean(f.attic)]),
+      indoor.map((r) => [r.id, r.type, r.floorId]),
+    ]);
     if (key !== this.planKey || !this.plan) {
       const input = (list: HouseRoom[]) => list.map((r) => ({ id: r.id, type: r.type }));
       this.plan = planHouse(
-        this.floors.map((f) => ({ id: f.id, level: f.level, rooms: input(indoor.filter((r) => r.floorId === f.id)) })),
+        this.floors.map((f) => ({
+          id: f.id,
+          level: f.level,
+          attic: f.attic,
+          rooms: input(indoor.filter((r) => r.floorId === f.id)),
+        })),
         input(indoor.filter((r) => !r.floorId || !floorIds.has(r.floorId))),
       );
       this.planKey = key;
@@ -368,6 +403,7 @@ export class LcHouse extends LitElement {
     const key = JSON.stringify([
       this.planKey,
       this.styleName,
+      this.topFloor,
       this.colors,
       this.rooms.map((r) => [r.id, r.type, r.outdoor, r.lights.map((l) => [l.id, l.name])]),
     ]);
@@ -382,6 +418,7 @@ export class LcHouse extends LitElement {
         rooms: new Map(this.rooms.filter((r) => !r.outdoor).map((r) => [r.id, room(r)])),
         outdoor: this.rooms.filter((r) => r.outdoor).map(room),
         style: this.houseStyle(),
+        topFloor: this.topFloor,
       });
       this.modelKey = key;
       // A new house: nothing to animate from.
@@ -655,27 +692,34 @@ export class LcHouse extends LitElement {
     this.frame = requestAnimationFrame(this.tick);
   }
 
-  /** What moves in the sky at this moment: the drift of the clouds, and now and then a shooting star. */
-  private weather(now: number, sky: Sky, alive: boolean): Weather {
-    if (!alive) return { time: 0 };
-    if (this.meteor && now - this.meteor.start > 900) this.meteor = undefined;
-    if (!this.meteor && sky.stars > 0.6 && now > this.nextMeteor) {
-      // The first one waits its turn, so the sky is not falling the moment the card opens.
-      if (this.nextMeteor) {
-        const x = -0.7 + Math.random() * 1.4;
-        const y = 0.35 + Math.random() * 0.55;
-        const angle = (110 + Math.random() * 50) * RAD * (Math.random() < 0.5 ? 1 : -1);
-        const length = 0.3 + Math.random() * 0.25;
-        this.meteor = { from: [x, y], to: [x + Math.sin(angle) * length, y + Math.cos(angle) * length], start: now };
-      }
-      this.nextMeteor = now + 14000 + Math.random() * 30000;
+  /** The time of day, the season and the weather, as the life around the house needs them. */
+  private conditions(sky: Sky, model: Model): Conditions {
+    const date = new Date();
+    const climate = this.climate;
+    let wind: Conditions['wind'];
+    if (climate?.windBearing !== undefined && climate.windSpeed !== undefined) {
+      // Downwind, in plan space: the front of the house faces `facing`.
+      const toward = (climate.windBearing + 180 - this.facing) * RAD;
+      wind = { x: -Math.sin(toward), y: Math.cos(toward), speed: climate.windSpeed };
     }
     return {
-      time: now / 1000,
-      meteor: this.meteor
-        ? { from: this.meteor.from, to: this.meteor.to, age: (now - this.meteor.start) / 900 }
-        : undefined,
+      sun: this.sunShown?.elevation ?? 30,
+      stars: sky.stars,
+      clouds: sky.clouds,
+      month: date.getMonth(),
+      southern: this.southern,
+      day: Math.floor((date.getTime() - date.getTimezoneOffset() * 60000) / 86400000),
+      temperature: climate?.temperature,
+      wind,
+      wet: climate?.wet,
+      roof: this.groups[model.groups.roof] ?? 1,
     };
+  }
+
+  /** Asks for something to fly or fall past now, whatever the schedule says: for the demo and tests. */
+  happen(what: Happening): void {
+    this.life.request(what);
+    this.schedule();
   }
 
   private tick = (now: number): void => {
@@ -766,8 +810,10 @@ export class LcHouse extends LitElement {
     if (fresh) this.sample = 0;
     const refine = this.sample < this.budget;
     const alive = this.motion && !this.reducedMotion;
-    // The sky is redrawn when the house is, and otherwise only as often as its slow drift needs.
-    if (!refine && !(alive && now - this.lastSky >= SKY_INTERVAL / this.quality)) {
+    // The sky is redrawn when the house is, and otherwise only as often as its slow drift needs:
+    // every frame while a bird or a shooting star goes by, so it moves smoothly.
+    const interval = this.life.busy ? 0 : SKY_INTERVAL / this.quality;
+    if (!refine && !(alive && now - this.lastSky >= interval)) {
       if (alive) this.schedule();
       return;
     }
@@ -786,7 +832,13 @@ export class LcHouse extends LitElement {
       skyRight: frame.right,
       skyUp: frame.up,
       pixelAngle: frame.pixel / (ratio * fitScale),
+      css: [w, h],
     };
+    let life: Scene | undefined;
+    if (alive) {
+      const lens = lensFor(camera, frame, pose.target, w, h);
+      life = this.life.frame(now, this.conditions(sky, model), model.stage, lens);
+    }
     try {
       if (refine) {
         if (this.sample === 0) renderer.setLights(this.tables.lights, this.tables.rooms);
@@ -803,7 +855,7 @@ export class LcHouse extends LitElement {
         }
         this.sample++;
       }
-      renderer.present(view, this.weather(now, sky, alive));
+      renderer.present(view, { time: alive ? now / 1000 : 0, life });
       this.lastSky = now;
     } catch (error) {
       console.warn('Light Control Card: the 3D house could not be drawn.', error);
@@ -916,32 +968,23 @@ export class LcHouse extends LitElement {
   /** Without 3D: each room as an outlined box, tinted with its light. */
   private renderFlat(data: ViewData, at: (p: Point) => [number, number, number]) {
     const byId = new Map(this.rooms.map((r) => [r.id, r]));
-    const boxes = [...data.volumes].map(([id, b]) => ({
-      id,
-      b,
-      depth: at([(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, b.z0])[2],
-    }));
+    const boxes = [...data.volumes].map(([id, volume]) => {
+      const low = Math.min(...volume.points.map((p) => p[2]));
+      const floor = volume.points.filter((p) => p[2] - low < 0.01);
+      const middle: Point = [0, 0, low];
+      for (const p of floor) for (let i = 0; i < 2; i++) middle[i] += p[i] / floor.length;
+      return { id, volume, floor, depth: at(middle)[2] };
+    });
     boxes.sort((p, q) => q.depth - p.depth);
-    return svg`<g class="flat" aria-hidden="true">${boxes.map(({ id, b }) => {
+    const outline = (points: Point[]) => hull(points.map((p) => at(p)).map((p): [number, number] => [p[0], p[1]]));
+    return svg`<g class="flat" aria-hidden="true">${boxes.map(({ id, volume, floor }) => {
       const room = byId.get(id);
-      const floor = hull(
-        [at([b.x0, b.y0, b.z0]), at([b.x1, b.y0, b.z0]), at([b.x1, b.y1, b.z0]), at([b.x0, b.y1, b.z0])].map((p) => [
-          p[0],
-          p[1],
-        ]),
-      );
-      const solid = hull(this.corners(b).map((p) => [at(p)[0], at(p)[1]]));
+      const solid = outline(volume.points);
       const fill = room?.rgb ? `rgb(${rgbTriplet(room.rgb)})` : 'rgb(140, 150, 165)';
       return svg`<path d=${solid} fill=${fill} fill-opacity=${room?.rgb ? 0.3 : 0.12}></path>
-        <path d=${floor} fill=${fill} fill-opacity=${room?.rgb ? 0.4 : 0.18}></path>
+        <path d=${outline(floor)} fill=${fill} fill-opacity=${room?.rgb ? 0.4 : 0.18}></path>
         <path d=${solid} class="line wire"></path>`;
     })}</g>`;
-  }
-
-  private corners(b: Box): Point[] {
-    const out: Point[] = [];
-    for (const z of [b.z0, b.z1]) for (const y of [b.y0, b.y1]) for (const x of [b.x0, b.x1]) out.push([x, y, z]);
-    return out;
   }
 
   /**
@@ -995,36 +1038,18 @@ export class LcHouse extends LitElement {
 
   /** A frame of light around the selected room, and a fainter one around the one under the pointer. */
   private renderOutline(data: ViewData, at: (p: Point) => [number, number, number]) {
-    const frame = (b: Box, strong: boolean) => {
-      const p = this.corners(b).map((corner) => at(corner));
-      const line = (i: number, j: number) =>
+    const frame = (volume: Volume, strong: boolean) => {
+      const p = volume.points.map((corner) => at(corner));
+      const line = ([i, j]: [number, number]) =>
         `M${p[i][0].toFixed(1)} ${p[i][1].toFixed(1)}L${p[j][0].toFixed(1)} ${p[j][1].toFixed(1)}`;
-      // Corners are numbered x, then y, then z: 0–3 the floor, 4–7 the top.
-      const edges = [
-        [0, 1],
-        [1, 3],
-        [3, 2],
-        [2, 0],
-        [4, 5],
-        [5, 7],
-        [7, 6],
-        [6, 4],
-        [0, 4],
-        [1, 5],
-        [2, 6],
-        [3, 7],
-      ];
-      // The corner farthest from the viewer: the three edges that meet there are drawn faintly.
+      // The corner farthest from the viewer: the edges that meet there are drawn faintly.
       const farthest = p.reduce((best, q, i) => (q[2] > p[best][2] ? i : best), 0);
-      const hidden = (e: number[]) => e[0] === farthest || e[1] === farthest;
-      const near = edges
+      const hidden = (e: [number, number]) => e[0] === farthest || e[1] === farthest;
+      const near = volume.edges
         .filter((e) => !hidden(e))
-        .map(([i, j]) => line(i, j))
+        .map(line)
         .join('');
-      const far = edges
-        .filter(hidden)
-        .map(([i, j]) => line(i, j))
-        .join('');
+      const far = volume.edges.filter(hidden).map(line).join('');
       return svg`<g class="outline ${strong ? 'strong' : ''}">
         <path d=${hull(p.map((q) => [q[0], q[1]]))} class="face"></path>
         <path d=${far} class="line far"></path>

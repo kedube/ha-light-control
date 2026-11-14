@@ -7,7 +7,7 @@ import { LightController } from './controller.ts';
 import { discover, UNASSIGNED, type DiscoveredEntity, type Discovery, type Room } from './discovery.ts';
 import type { EntityView } from './entity-model.ts';
 import { outletStyleFor, type OutletStyle } from './graphics.ts';
-import type { HomeAssistant } from './ha-types.ts';
+import type { HassEntity, HomeAssistant } from './ha-types.ts';
 import { fixtureKind } from './house/fixtures.ts';
 import { styleFor, type StyleName } from './house/materials.ts';
 import { cloudCover } from './house/sky.ts';
@@ -25,7 +25,15 @@ import { setLanguage, t } from './localize.ts';
 import { balanceColumns, columnCount, columnWidth, estimateRoomHeight } from './room-columns.ts';
 import { floorGroups, groupOf, OUTSIDE, roomsIn, validScope, type FloorGroup, type Scope } from './scope.ts';
 import { buttonReset, themeVars } from './styles.ts';
-import { skyMode, type HouseColors, type HouseRoom, type HouseView, type SunInfo } from './components/lc-house.ts';
+import { isAtticFloor } from './room-types.ts';
+import {
+  skyMode,
+  type Climate,
+  type HouseColors,
+  type HouseRoom,
+  type HouseView,
+  type SunInfo,
+} from './components/lc-house.ts';
 import type { SlideDetail } from './components/lc-pill.ts';
 import type { SheetTarget } from './components/lc-sheet.ts';
 import type { TileActionDetail, TileBrightnessDetail } from './components/lc-tile.ts';
@@ -54,6 +62,38 @@ const REDISCOVER_MS = 30_000;
 const CONFIRM_MS = 4000;
 
 type SheetRef = { type: 'entity'; entityId: string } | { type: 'scope'; scope: Scope };
+
+const COMPASS = ['n', 'nne', 'ne', 'ene', 'e', 'ese', 'se', 'sse', 's', 'ssw', 'sw', 'wsw', 'w', 'wnw', 'nw', 'nnw'];
+
+const numeric = (v: unknown): number | undefined => {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+};
+
+/** A weather entity's temperature in °C, its wind (from, in degrees; speed in m/s) and whether it is wet. */
+export function readClimate(state: string, a: Record<string, unknown>): Climate {
+  let temperature = numeric(a.temperature);
+  if (temperature !== undefined && /f/i.test(String(a.temperature_unit ?? '')))
+    temperature = ((temperature - 32) * 5) / 9;
+  let windSpeed = numeric(a.wind_speed);
+  if (windSpeed !== undefined) {
+    const unit = String(a.wind_speed_unit ?? 'km/h').toLowerCase();
+    const factor = unit.includes('mph')
+      ? 0.44704
+      : unit === 'm/s'
+        ? 1
+        : unit.includes('kn')
+          ? 0.514444
+          : unit.includes('ft/s')
+            ? 0.3048
+            : 1 / 3.6;
+    windSpeed *= factor;
+  }
+  const point = typeof a.wind_bearing === 'string' ? COMPASS.indexOf(a.wind_bearing.trim().toLowerCase()) : -1;
+  const windBearing = numeric(a.wind_bearing) ?? (point >= 0 ? point * 22.5 : undefined);
+  const wet = /rain|pouring|snow|hail/.test(state);
+  return { temperature, windBearing, windSpeed, wet };
+}
 
 export class LightControlCard extends LitElement {
   static override properties = {
@@ -86,6 +126,9 @@ export class LightControlCard extends LitElement {
   private discovery?: Discovery;
   /** The weather entity the sky follows; null when there is none. */
   private weatherId?: string | null;
+  /** The weather as last read, kept while it is the same so the house is not asked to redraw. */
+  private climateKey = '';
+  private climateValue?: Climate;
   private discoveryKey: unknown[] = [];
   private resizeObserver?: ResizeObserver;
   private observedHead?: Element;
@@ -311,14 +354,17 @@ export class LightControlCard extends LitElement {
     return html`<section class="hero sky-${skyMode(sun)}">
       <lc-house
         .rooms=${houseRooms}
-        .floors=${discovery.floors.map((f) => ({ id: f.id, level: f.level }))}
+        .floors=${discovery.floors.map((f) => ({ id: f.id, level: f.level, attic: isAtticFloor(f.name, f.icon) }))}
         .view=${this.houseView(groups, scope)}
         .selected=${scope.kind === 'room' ? scope.id : null}
         .sun=${sun}
         .styleName=${this.houseStyle()}
+        .topFloor=${config.house_top_floor}
         .colors=${this.houseColors()}
         .facing=${this.houseFacing()}
         .clouds=${this.cloudCover()}
+        .climate=${this.climate()}
+        .southern=${(this.hass?.config?.latitude ?? 1) < 0}
         .motion=${config.animate_sky}
         .topInset=${hasText ? this._headHeight + 6 : 8}
         .titleWidth=${hasText ? this._headWidth : 0}
@@ -448,8 +494,8 @@ export class LightControlCard extends LitElement {
     return ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'].indexOf(facing) * 45;
   }
 
-  /** How clouded over the sky is, from the weather entity; undefined for fair weather. */
-  private cloudCover(): number | undefined {
+  /** The weather entity the sky follows, if it follows one. */
+  private weather(): HassEntity | undefined {
     const config = this._config!;
     const states = this.hass?.states;
     if (!config.sky_weather || !states) return undefined;
@@ -457,8 +503,33 @@ export class LightControlCard extends LitElement {
     if (this.weatherId === undefined) {
       this.weatherId = config.weather_entity ?? Object.keys(states).find((id) => id.startsWith('weather.')) ?? null;
     }
-    const weather = this.weatherId ? states[this.weatherId] : undefined;
+    return this.weatherId ? states[this.weatherId] : undefined;
+  }
+
+  /** How clouded over the sky is, from the weather entity; undefined for fair weather. */
+  private cloudCover(): number | undefined {
+    const weather = this.weather();
     return weather ? cloudCover(weather.state, weather.attributes.cloud_coverage) : undefined;
+  }
+
+  /** The temperature, the wind and whether it is raining, from the weather entity. */
+  private climate(): Climate | undefined {
+    const weather = this.weather();
+    if (!weather) return undefined;
+    const a = weather.attributes;
+    const key = JSON.stringify([
+      weather.state,
+      a.temperature,
+      a.temperature_unit,
+      a.wind_bearing,
+      a.wind_speed,
+      a.wind_speed_unit,
+    ]);
+    if (key !== this.climateKey) {
+      this.climateKey = key;
+      this.climateValue = readClimate(weather.state, a);
+    }
+    return this.climateValue;
   }
 
   private sunInfo(): SunInfo | undefined {

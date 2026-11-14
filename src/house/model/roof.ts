@@ -2,8 +2,11 @@
 // each design of house its outline.
 
 import { MAT, PAINT, type HouseStyle } from '../materials.ts';
-import { SKIP, type Paint } from '../mesh.ts';
-import type { Context } from './context.ts';
+import { SKIP, type Paint, type Region } from '../mesh.ts';
+import type { PlanStory } from '../plan.ts';
+import { EXT_T, type Context, type Point } from './context.ts';
+import { chimneySpot, FASCIA, type Dormer } from './massing.ts';
+import { wallRun, windowUnit, type Frame, type Opening } from './walls.ts';
 
 /** The walls a roof sits on: their outline, the height of their top, and which ends stand free. */
 export interface RoofSpan {
@@ -12,25 +15,27 @@ export interface RoofSpan {
   y0: number;
   y1: number;
   top: number;
+  /** Rise over run. */
+  pitch: number;
   group: number;
   /** A gable end that meets a taller wall has no overhang and no wall of its own. */
   ends: { left: boolean; right: boolean };
-}
-
-/** A gable facing the front: where its ridge is, half its width, and its pitch. */
-export interface CrossGable {
-  at: number;
-  half: number;
-  pitch: number;
+  /**
+   * The roof of the house itself, with its gable to the front, its dormers and the floor that may
+   * be built into it. The garage's roof is plain.
+   */
+  main: boolean;
 }
 
 const RAKE = 0.32;
-const FASCIA = 0.14;
 
 const trimOf = (style: HouseStyle): Paint => ({ material: MAT.plain, color: style.trim });
 
-/** A window in a gable or a dormer: glass over a dark panel, in a frame. It does not look into a room. */
-function blindWindow(
+/**
+ * A louvered vent high in a gable. It airs the space under a roof that nobody lives in; a window
+ * there would promise a floor that the house does not have.
+ */
+function vent(
   c: Context,
   plane: 'x' | 'y',
   at: number,
@@ -48,14 +53,17 @@ function blindWindow(
       ? m.box(at + d0 * out, a0, h0, at + d1 * out, a1, h1)
       : m.box(a0, at + d0 * out, h0, a1, at + d1 * out, h1);
   m.with({ group, room: 0, ...trimOf(style) }, () =>
-    box(mid - half - 0.07, mid + half + 0.07, -0.01, 0.03, z0 - 0.07, z0 + height + 0.07),
+    box(mid - half - 0.05, mid + half + 0.05, -0.01, 0.03, z0 - 0.05, z0 + height + 0.05),
   );
-  m.with({ group, room: 0, material: MAT.gloss, color: [40, 48, 60] }, () =>
+  m.with({ group, room: 0, material: MAT.plain, color: [54, 54, 58] }, () =>
     box(mid - half, mid + half, -0.01, 0.036, z0, z0 + height),
   );
-  m.with({ group, room: 0, material: MAT.plain, color: style.window.frame }, () => {
-    box(mid - 0.018, mid + 0.018, -0.01, 0.045, z0, z0 + height);
-    box(mid - half, mid + half, -0.01, 0.045, z0 + height / 2 - 0.018, z0 + height / 2 + 0.018);
+  m.with({ group, room: 0, ...trimOf(style) }, () => {
+    const slats = Math.max(3, Math.round(height / 0.09));
+    for (let i = 0; i < slats; i++) {
+      const z = z0 + (height * (i + 0.5)) / slats;
+      box(mid - half, mid + half, -0.01, 0.05, z - 0.017, z + 0.017);
+    }
   });
 }
 
@@ -108,91 +116,229 @@ function eaveTrim(
   });
 }
 
-/** A dormer: a little gabled window standing out of the front slope of the roof. */
-function dormer(c: Context, r: RoofSpan, x: number, pitch: number): void {
+/**
+ * A dormer: a window of the floor under the roof, standing out of the slope under a roof of its
+ * own. A gabled one holds a single window; a shed or a box dormer holds a row of them. Its face is
+ * a real wall, and the slope is open behind it, so it looks into the room.
+ */
+function dormer(c: Context, r: RoofSpan, d: Dormer, story: PlanStory): void {
   const m = c.mesh;
   const style = c.style;
-  const half = 0.62;
-  const height = 1.2;
-  const own = 0.85;
-  const front = r.y1 - 0.5;
-  const base = r.top + (r.y1 - front) * pitch;
-  const eave = base + height;
-  const ridge = eave + half * own;
-  // Where a height on the dormer runs back into the main roof.
-  const back = (z: number) => r.y1 - (z - r.top) / pitch;
-  const over = 0.13;
-  const len = Math.hypot(1, own);
-  m.with({ group: r.group, room: 0 }, () => {
-    m.with(style.gable, () => {
-      m.poly(
-        [
-          [x - half, front, base],
-          [x + half, front, base],
-          [x + half, front, eave],
-          [x, front, ridge],
-          [x - half, front, eave],
-        ],
-        [0, 1, 0],
-      );
-      // The cheeks: a triangle of wall each side, down to the roof.
+  const p = r.pitch;
+  const group = r.group;
+  const n = d.side === 'front' ? 1 : -1;
+  const wall = d.side === 'front' ? r.y1 : r.y0;
+  /** A distance in from the wall below, as y. */
+  const y = (t: number) => wall - n * t;
+  const face = y(d.set);
+  const base = r.top + d.set * p;
+  const eave = story.z + d.eave;
+  // A box dormer is clad in lead, as flat roofs are.
+  const cladding: Paint = d.kind === 'box' ? { material: MAT.plain, color: [96, 98, 104] } : style.gable;
+  const f: Frame = { ox: d.x - d.half, oy: face, ax: 1, ay: 0, nx: 0, ny: n, length: d.half * 2 };
+  // The face, a stretch for each window, lit inside by the room that window belongs to.
+  const windows = [...d.windows].sort((a, b) => a.x - b.x);
+  windows.forEach((w, i) => {
+    const from = i === 0 ? 0 : (windows[i - 1].x + w.x) / 2 - f.ox;
+    const to = i === windows.length - 1 ? f.length : (w.x + windows[i + 1].x) / 2 - f.ox;
+    const room = c.roomOf(w.cell, story);
+    const opening: Opening = {
+      a: w.x - w.half - f.ox,
+      b: w.x + w.half - f.ox,
+      z0: story.z + d.sill - base,
+      z1: story.z + d.head - base,
+      kind: 'window',
+    };
+    wallRun(
+      c,
+      f,
+      from,
+      to,
+      base,
+      eave - base,
+      EXT_T,
+      [opening],
+      { outer: cladding, outerRoom: 0, inner: PAINT.plaster, room },
+      { lower: group, upper: group },
+      null,
+    );
+    windowUnit(c, f, opening, base, room, group, { shutters: null, arched: false, box: false });
+  });
+
+  m.with({ group, room: 0 }, () => {
+    // The cheeks: a triangle of wall each side, down to the roof.
+    m.with(cladding, () => {
       for (const s of [-1, 1]) {
+        const x = d.x + s * d.half;
         m.poly(
           [
-            [x + s * half, front, base],
-            [x + s * half, front, eave],
-            [x + s * half, back(eave), eave],
+            [x, face, base],
+            [x, face, eave],
+            [x, y(d.reach), r.top + d.reach * p],
           ],
           [s, 0, 0],
         );
       }
     });
-    m.with(style.roof, () => {
+    if (d.kind === 'gable') {
+      const own = d.pitch;
+      const ridge = eave + d.half * own;
+      const over = 0.13;
+      const len = Math.hypot(1, own);
+      const front = face + n * 0.16;
+      // Where a height on the dormer runs back into the main roof.
+      const back = (z: number) => y((z - r.top) / p);
+      m.with(cladding, () =>
+        m.poly(
+          [
+            [d.x - d.half, face, eave],
+            [d.x + d.half, face, eave],
+            [d.x, face, ridge],
+          ],
+          [0, n, 0],
+        ),
+      );
       for (const s of [-1, 1]) {
         const low = eave - over * own;
-        const edge = x + s * (half + over);
-        m.quad(
-          [edge, front + 0.16, low],
-          [x, front + 0.16, ridge],
-          [x, back(ridge), ridge],
-          [edge, back(low), low],
-          [s * own, 0, 1],
-          [
-            [front, 0],
-            [front, (half + over) * len],
-            [back(ridge), (half + over) * len],
-            [back(low), 0],
-          ],
+        const edge = d.x + s * (d.half + over);
+        m.with(style.roof, () =>
+          m.quad(
+            [edge, front, low],
+            [d.x, front, ridge],
+            [d.x, back(ridge), ridge],
+            [edge, back(low), low],
+            [s * own, 0, 1],
+            [
+              [front, 0],
+              [front, (d.half + over) * len],
+              [back(ridge), (d.half + over) * len],
+              [back(low), 0],
+            ],
+          ),
+        );
+        // Barge boards up the little gable.
+        m.with(trimOf(style), () =>
+          m.quad(
+            [edge, front, low - 0.09],
+            [edge, front, low + 0.01],
+            [d.x, front, ridge + 0.01],
+            [d.x, front, ridge - 0.09],
+            [0, n, 0],
+          ),
         );
       }
-    });
+      return;
+    }
+    // One slope, falling toward the eaves from where it leaves the main roof.
+    const q = d.pitch;
+    const thick = 0.07;
+    const over = 0.16;
+    const len = Math.hypot(1, q);
+    const at = (t: number) => eave + thick + (t - d.set) * q;
+    const meet = (shift: number) => (eave + thick + shift - r.top - d.set * q) / (p - q);
+    const t0 = d.set - 0.24;
+    const xa = d.x - d.half - over;
+    const xb = d.x + d.half + over;
+    m.with(style.roof, () =>
+      m.quad(
+        [xa, y(t0), at(t0)],
+        [xb, y(t0), at(t0)],
+        [xb, y(meet(0)), at(meet(0))],
+        [xa, y(meet(0)), at(meet(0))],
+        [0, n * q, 1],
+        [
+          [xa, 0],
+          [xb, 0],
+          [xb, (meet(0) - t0) * len],
+          [xa, (meet(0) - t0) * len],
+        ],
+      ),
+    );
     m.with(trimOf(style), () => {
-      // Barge boards up the little gable.
-      for (const s of [-1, 1]) {
-        const low = eave - over * own;
-        const edge = x + s * (half + over);
+      const deep = 0.13;
+      m.quad(
+        [xa, y(t0), at(t0) - deep],
+        [xb, y(t0), at(t0) - deep],
+        [xb, y(t0), at(t0) + 0.005],
+        [xa, y(t0), at(t0) + 0.005],
+        [0, n, 0],
+      );
+      // Under the overhang, and a fascia down each side to where it meets the roof.
+      m.quad(
+        [xa, y(t0), at(t0) - deep],
+        [xb, y(t0), at(t0) - deep],
+        [xb, face, at(d.set) - deep],
+        [xa, face, at(d.set) - deep],
+        [0, 0, -1],
+      );
+      for (const [x, s] of [
+        [xa, -1],
+        [xb, 1],
+      ]) {
+        const end = meet(-deep);
         m.quad(
-          [edge, front + 0.16, low - 0.09],
-          [edge, front + 0.16, low + 0.01],
-          [x, front + 0.16, ridge + 0.01],
-          [x, front + 0.16, ridge - 0.09],
-          [0, 1, 0],
+          [x, y(t0), at(t0) - deep],
+          [x, y(t0), at(t0) + 0.005],
+          [x, y(meet(0)), at(meet(0)) + 0.005],
+          [x, y(end), at(end) - deep],
+          [s, 0, 0],
         );
       }
     });
   });
-  blindWindow(c, 'y', front, 1, x, base + 0.22, 0.36, 0.82, r.group);
 }
 
 /**
- * A gable roof with its ridge along x. The eaves overhang the long walls and the gable ends; a
- * cross gable faces the front, and dormers stand out of the front slope.
+ * A window lying in a slope of the roof: glass in a slim frame, lit by the room under it. `pitch`
+ * is that of the slope it lies in.
  */
-function gable(c: Context, r: RoofSpan, cross: CrossGable | null, dormers: number[]): number {
+function skylight(c: Context, r: RoofSpan, d: Dormer, story: PlanStory, pitch: number): void {
+  const m = c.mesh;
+  const len = Math.hypot(1, pitch);
+  // The wall the slope rises from: u runs along it, t in from it.
+  const f: Frame =
+    d.side === 'front'
+      ? { ox: 0, oy: r.y1, ax: 1, ay: 0, nx: 0, ny: 1, length: 0 }
+      : d.side === 'back'
+        ? { ox: 0, oy: r.y0, ax: 1, ay: 0, nx: 0, ny: -1, length: 0 }
+        : d.side === 'right'
+          ? { ox: r.x1, oy: 0, ax: 0, ay: 1, nx: 1, ny: 0, length: 0 }
+          : { ox: r.x0, oy: 0, ax: 0, ay: 1, nx: -1, ny: 0, length: 0 };
+  const normal: Point = [(f.nx * pitch) / len, (f.ny * pitch) / len, 1 / len];
+  const on = (u: number, t: number, up: number): Point => [
+    f.ox + f.ax * u - f.nx * t,
+    f.oy + f.ay * u - f.ny * t,
+    r.top + t * pitch + up,
+  ];
+  /** A rectangle lying on the slope, lifted off it by `up`. */
+  const pane = (a: number, b: number, t0: number, t1: number, up: number) =>
+    m.quad(on(a, t0, up), on(b, t0, up), on(b, t1, up), on(a, t1, up), normal);
+  const room = c.roomOf(d.windows[0].cell, story);
+  const a = d.x - d.half;
+  const b = d.x + d.half;
+  const rim = 0.07;
+  m.with({ group: r.group, room: 0, material: MAT.plain, color: [62, 64, 70] }, () =>
+    pane(a - rim, b + rim, d.set - rim / len, d.reach + rim / len, 0.03),
+  );
+  m.with({ group: r.group, room: 0, material: MAT.gloss, color: [36, 44, 56] }, () => pane(a, b, d.set, d.reach, 0.05));
+  m.with({ group: r.group, room, blend: true, ...PAINT.white, material: MAT.glass }, () =>
+    pane(a, b, d.set, d.reach, 0.07),
+  );
+}
+
+/**
+ * A gable roof with its ridge along x. The eaves overhang the long walls and the gable ends. On
+ * the house itself a second gable may face the front, and when a floor is built into the roof its
+ * dormers stand on the slopes and its own walls close the gable ends.
+ */
+function gable(c: Context, r: RoofSpan): number {
   const m = c.mesh;
   const style = c.style;
   const { x0, x1, y0, y1, top, group } = r;
-  const pitch = style.pitch;
+  const pitch = r.pitch;
+  const cross = r.main ? c.roof.cross : null;
+  const loft = r.main ? c.roof.loft : null;
+  const dormers = loft ? c.loftWindows.dormers : [];
   const half = (y1 - y0) / 2;
   const mid = (y0 + y1) / 2;
   const rise = half * pitch;
@@ -202,84 +348,91 @@ function gable(c: Context, r: RoofSpan, cross: CrossGable | null, dormers: numbe
   const xa = x0 - (r.ends.left ? RAKE : 0);
   const xb = x1 + (r.ends.right ? RAKE : 0);
   const len = Math.hypot(1, pitch);
-  const full = (half + eave) * len;
-  // A cross gable is never higher than the main ridge.
-  const gablePitch = cross ? Math.min(cross.pitch, (rise - 0.05) / cross.half) : 0;
-  const peak = cross ? top + cross.half * gablePitch : 0;
-  const dies = cross ? y1 - (cross.half * gablePitch) / pitch : 0;
-  // Distance up the front slope from the edge of the eave, for the run of the shingles.
-  const up = (y: number) => (y1 + eave - y) * len;
+  const gablePitch = cross?.pitch ?? 0;
+  const peak = cross?.peak ?? 0;
+  const dies = cross?.dies ?? 0;
+  // A gable to the front reaches out as far as the eaves, and its slopes come down to meet them:
+  // they spread wider than its walls. The main slope runs on behind it, to the valleys between them.
+  const front = y1 + eave;
+  const spread = cross ? cross.half + (eave * pitch) / gablePitch : 0;
+  const valleys: Region[] | null = cross
+    ? [
+        [
+          { n: [1, 0, 0], d: cross.at },
+          { n: [gablePitch, 0, -1], d: gablePitch * cross.at - peak },
+        ],
+        [
+          { n: [-1, 0, 0], d: -cross.at },
+          { n: [-gablePitch, 0, -1], d: -peak - gablePitch * cross.at },
+        ],
+      ]
+    : null;
+
+  /** One slope from a to b, open where a dormer stands on it. `n` is 1 at the front, -1 at the back. */
+  const slope = (n: number, a: number, b: number) => {
+    if (b - a < 0.02) return;
+    const wall = n > 0 ? y1 : y0;
+    const shift = n > 0 ? 0 : 11;
+    // A piece between two distances in from the wall; the eave hangs out at -eave.
+    const piece = (pa: number, pb: number, t0: number, t1: number) => {
+      if (pb - pa < 0.01 || t1 - t0 < 0.01) return;
+      m.quad(
+        [pa, wall - n * t0, top + t0 * pitch],
+        [pb, wall - n * t0, top + t0 * pitch],
+        [pb, wall - n * t1, top + t1 * pitch],
+        [pa, wall - n * t1, top + t1 * pitch],
+        [0, (n * pitch) / len, 1 / len],
+        [
+          [pa + shift, (t0 + eave) * len],
+          [pb + shift, (t0 + eave) * len],
+          [pb + shift, (t1 + eave) * len],
+          [pa + shift, (t1 + eave) * len],
+        ],
+      );
+    };
+    const side = n > 0 ? 'front' : 'back';
+    const standing = dormers
+      .filter((d) => d.kind !== 'skylight' && d.side === side && d.x + d.half > a && d.x - d.half < b)
+      .sort((p, q) => p.x - q.x);
+    let from = a;
+    for (const d of standing) {
+      const ha = Math.max(a, d.x - d.half + 0.02);
+      const hb = Math.min(b, d.x + d.half - 0.02);
+      piece(from, ha, -eave, half);
+      piece(ha, hb, -eave, d.set);
+      piece(ha, hb, d.reach, half);
+      from = hb;
+    }
+    piece(from, b, -eave, half);
+  };
 
   m.with({ group, room: 0 }, () => {
     m.with(style.roof, () => {
-      const front = (a: number, b: number) => {
-        if (b - a < 0.02) return;
-        m.quad(
-          [a, y1 + eave, low],
-          [b, y1 + eave, low],
-          [b, mid, ridge],
-          [a, mid, ridge],
-          [0, pitch / len, 1 / len],
-          [
-            [a, 0],
-            [b, 0],
-            [b, full],
-            [a, full],
-          ],
-        );
-      };
       if (cross) {
-        front(xa, cross.at - cross.half);
-        front(cross.at + cross.half, xb);
+        m.with({ clip: valleys }, () => slope(1, xa, xb));
         for (const s of [-1, 1]) {
-          const edge = cross.at + s * cross.half;
-          // The main slope behind the cross gable, down to the valley between them.
-          m.quad(
-            [edge, y1, top],
-            [cross.at, dies, peak],
-            [cross.at, mid, ridge],
-            [edge, mid, ridge],
-            [0, pitch / len, 1 / len],
+          // The gable's own slope, from its ridge down to the corner of the eaves.
+          const corner = cross.at + s * spread;
+          const run = spread * Math.hypot(1, gablePitch);
+          m.poly(
             [
-              [edge, up(y1)],
-              [cross.at, up(dies)],
-              [cross.at, full],
-              [edge, full],
+              [cross.at, front, peak],
+              [cross.at, dies, peak],
+              [corner, front, low],
             ],
-          );
-          // The cross gable's own slope, from its overhang at the front back to the valley.
-          const run = cross.half * Math.hypot(1, gablePitch);
-          m.quad(
-            [edge, y1 + RAKE, top],
-            [cross.at, y1 + RAKE, peak],
-            [cross.at, dies, peak],
-            [edge, y1, top],
             [s * gablePitch, 0, 1],
             [
-              [y1 + RAKE + 7, 0],
-              [y1 + RAKE + 7, run],
+              [front + 7, run],
               [dies + 7, run],
-              [y1 + 7, 0],
+              [front + 7, 0],
             ],
           );
         }
-      } else front(xa, xb);
-      m.quad(
-        [xa, y0 - eave, low],
-        [xb, y0 - eave, low],
-        [xb, mid, ridge],
-        [xa, mid, ridge],
-        [0, -pitch / len, 1 / len],
-        [
-          [xa + 11, 0],
-          [xb + 11, 0],
-          [xb + 11, full],
-          [xa + 11, full],
-        ],
-      );
+      } else slope(1, xa, xb);
+      slope(-1, xa, xb);
       // A cap along the ridge.
       m.box(xa, mid - 0.11, ridge - 0.03, xb, mid + 0.11, ridge + 0.035);
-      if (cross) m.box(cross.at - 0.1, dies, peak - 0.03, cross.at + 0.1, y1 + RAKE, peak + 0.035);
+      if (cross) m.box(cross.at - 0.1, dies, peak - 0.03, cross.at + 0.1, front, peak + 0.035);
     });
     m.with(trimOf(style), () => {
       // Barge boards up the gable ends, and the underside of their overhang.
@@ -303,16 +456,37 @@ function gable(c: Context, r: RoofSpan, cross: CrossGable | null, dormers: numbe
       if (cross) {
         for (const s of [-1, 1]) {
           const edge = cross.at + s * cross.half;
+          const corner = cross.at + s * spread;
+          // Barge boards down the front of the gable to the corners of the eaves.
           m.quad(
-            [edge, y1 + RAKE, top - FASCIA],
-            [edge, y1 + RAKE, top + 0.01],
-            [cross.at, y1 + RAKE, peak + 0.01],
-            [cross.at, y1 + RAKE, peak - FASCIA],
+            [corner, front, low - FASCIA],
+            [corner, front, low + 0.01],
+            [cross.at, front, peak + 0.01],
+            [cross.at, front, peak - FASCIA],
             [0, 1, 0],
+          );
+          // Under its overhang, in front of the gable wall.
+          m.quad(
+            [cross.at, y1, peak - FASCIA],
+            [edge, y1, top - FASCIA],
+            [corner, front, low - FASCIA],
+            [cross.at, front, peak - FASCIA],
+            [-s * gablePitch, 0, -1],
+          );
+          // And under the eaves beside it, where they run in under the gable's slope.
+          m.poly(
+            [
+              [corner, y1, low - FASCIA],
+              [edge, y1, low - FASCIA],
+              [corner, front, low - FASCIA],
+            ],
+            [0, 0, -1],
           );
         }
       }
     });
+    // With a floor under the roof, that floor's own walls stand in the gables.
+    if (loft) return;
     m.with(style.gable, () => {
       for (const [x, n, on] of [
         [x0, -1, r.ends.left],
@@ -341,19 +515,32 @@ function gable(c: Context, r: RoofSpan, cross: CrossGable | null, dormers: numbe
     });
   });
   if (cross) {
-    eaveTrim(c, xa, cross.at - cross.half, y1, y1 + eave, low, 1, group);
-    eaveTrim(c, cross.at + cross.half, xb, y1, y1 + eave, low, 1, group);
-    if (peak - top > 1.5)
-      blindWindow(c, 'y', y1, 1, cross.at, top + (peak - top) * 0.22, 0.3, Math.min(0.9, (peak - top) * 0.36), group);
-  } else eaveTrim(c, xa, xb, y1, y1 + eave, low, 1, group);
+    eaveTrim(c, xa, cross.at - spread, y1, front, low, 1, group);
+    eaveTrim(c, cross.at + spread, xb, y1, front, low, 1, group);
+  } else eaveTrim(c, xa, xb, y1, front, low, 1, group);
   eaveTrim(c, xa, xb, y0, y0 - eave, low, -1, group);
-  // An attic window in the gable end the viewer first sees.
-  if (r.ends.right && rise > 1.6) {
-    const size = Math.min(0.5, rise * 0.16);
-    blindWindow(c, 'x', x1, 1, mid, top + rise * 0.3, size, size * 2, group);
+  if (loft) {
+    for (const d of dormers) {
+      if (d.kind === 'skylight') skylight(c, r, d, loft, pitch);
+      else dormer(c, r, d, loft);
+    }
+    // A gable to the front that no room has a window in still has its vent.
+    if (cross && !c.loftWindows.walls.some((w) => w.side === 'front') && peak - top > 1.2) {
+      const size = Math.min(0.2, (peak - top) * 0.1);
+      vent(c, 'y', y1, 1, cross.at, top + (peak - top) * 0.46, size, size * 2, group);
+    }
+  } else if (r.main) {
+    // Nobody lives under this roof: its gables have vents, not windows.
+    if (rise > 1.3) {
+      const size = Math.min(0.24, rise * 0.1);
+      if (r.ends.right) vent(c, 'x', x1, 1, mid, top + rise * 0.5, size, size * 2, group);
+      if (r.ends.left) vent(c, 'x', x0, -1, mid, top + rise * 0.5, size, size * 2, group);
+    }
+    if (cross && peak - top > 1.2) {
+      const size = Math.min(0.2, (peak - top) * 0.1);
+      vent(c, 'y', y1, 1, cross.at, top + (peak - top) * 0.46, size, size * 2, group);
+    }
   }
-  // Dormers need a roof tall enough to stand on.
-  if (rise > 0.5 * pitch + 2.1) for (const x of dormers) dormer(c, r, x, pitch);
   return ridge;
 }
 
@@ -362,7 +549,7 @@ function hip(c: Context, r: RoofSpan): number {
   const m = c.mesh;
   const style = c.style;
   const { x0, x1, y0, y1, top, group } = r;
-  const pitch = style.pitch;
+  const pitch = r.pitch;
   const eave = style.eave;
   const half = (y1 - y0) / 2;
   const mid = (y0 + y1) / 2;
@@ -443,6 +630,13 @@ function hip(c: Context, r: RoofSpan): number {
   });
   eaveTrim(c, xa, xb, y1, y1 + eave, low, 1, group);
   eaveTrim(c, xa, xb, y0, y0 - eave, low, -1, group);
+  // A floor under a hipped roof is lit through the slopes, at the ends as well as front and back.
+  const loft = r.main ? c.roof.loft : null;
+  if (loft) {
+    for (const d of c.loftWindows.dormers) {
+      skylight(c, r, d, loft, d.side === 'front' || d.side === 'back' ? pitch : endPitch);
+    }
+  }
   return ridge;
 }
 
@@ -496,7 +690,7 @@ function shed(c: Context, r: RoofSpan): number {
   const m = c.mesh;
   const style = c.style;
   const { x0, x1, y0, y1, top, group } = r;
-  const pitch = Math.max(0.06, style.pitch);
+  const pitch = Math.max(0.06, r.pitch);
   const eave = style.eave;
   const thick = 0.24;
   const at = (y: number) => top + 0.12 + (y - y0) * pitch;
@@ -566,15 +760,13 @@ export function chimney(c: Context, r: RoofSpan, ridge: number): void {
   const m = c.mesh;
   const style = c.style;
   const low = style.roofForm === 'flat' || style.roofForm === 'shed';
-  const mid = (r.y0 + r.y1) / 2;
-  const wide = low ? 1.5 : 0.85;
-  const x0 = r.x0 + (r.x1 - r.x0) * (low ? 0.16 : 0.66);
-  const x1 = x0 + wide;
-  const y0 = low ? mid - 0.4 : mid - 1.75;
-  const y1 = y0 + 0.75;
+  const { x0, x1, y0, y1 } = chimneySpot(c.roof);
   const head = low ? ridge + 0.5 : ridge + 0.75;
   m.with({ group: r.group, room: 0 }, () => {
-    m.with(style.chimney, () => m.box(x0, y0, r.top, x1, y1, head, SKIP.bottom));
+    const stack = () => m.with(style.chimney, () => m.box(x0, y0, r.top, x1, y1, head, SKIP.bottom));
+    // It stands on the roof: nothing of it shows in the rooms a sloping roof may have under it.
+    if (low) stack();
+    else m.with({ clip: [[{ n: [0, r.pitch, -1], d: r.pitch * r.y0 - r.top + 0.12, open: true }]] }, stack);
     m.with(PAINT.concrete, () => m.box(x0 - 0.07, y0 - 0.07, head, x1 + 0.07, y1 + 0.07, head + 0.09));
     const flues = style.chimneyPots ? [x0 + 0.22, (x0 + x1) / 2, x1 - 0.22] : [x0 + 0.24, x1 - 0.24];
     flues.forEach((x, i) => {
@@ -586,26 +778,19 @@ export function chimney(c: Context, r: RoofSpan, ridge: number): void {
 }
 
 /**
- * Builds a roof of the style's form over a set of walls. Returns its highest point. A cross gable
- * and dormers go on the main roof only.
+ * Builds a roof of the style's form over a set of walls, and returns its highest point. The roof
+ * of the house itself takes its gable to the front and its dormers from the model.
  */
-export function buildRoof(c: Context, r: RoofSpan, cross: CrossGable | null = null, dormers: number[] = []): number {
+export function buildRoof(c: Context, r: RoofSpan): number {
   switch (c.style.roofForm) {
     case 'hip':
       // A hip needs four free sides; against a taller wall it is built as a gable.
-      return r.ends.left && r.ends.right ? hip(c, r) : gable(c, r, null, []);
+      return r.ends.left && r.ends.right ? hip(c, r) : gable(c, { ...r, main: false });
     case 'flat':
       return flat(c, r);
     case 'shed':
       return shed(c, r);
     default:
-      return gable(c, r, cross, dormers);
+      return gable(c, r);
   }
-}
-
-/** How high a roof of this style rises over walls of a given depth, for framing the picture. */
-export function roofHeight(style: HouseStyle, depth: number): number {
-  if (style.roofForm === 'flat') return 0.5;
-  if (style.roofForm === 'shed') return 0.4 + (depth + style.eave) * Math.max(0.06, style.pitch);
-  return (depth / 2) * style.pitch;
 }

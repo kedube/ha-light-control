@@ -104,6 +104,12 @@ export const nl: Translation = {
   opt_style_contemporary: 'Hedendaags',
   opt_style_brick: 'Baksteen',
   opt_style_european: 'Europees: stucwerk en dakpannen',
+  cfg_house_top_floor: 'Bovenste verdieping',
+  opt_top_floor_auto: 'Zoals bij de bouwstijl hoort',
+  opt_top_floor_roof: 'Onder het dak',
+  opt_top_floor_full: 'Een volledige verdieping',
+  help_house_top_floor:
+    'Onder het dak heeft de bovenste verdieping schuine plafonds en dakkapellen. Beslist de bouwstijl, dan komt een verdieping met de naam Zolder daar altijd.',
   cfg_house_facing: 'De voorkant van het huis kijkt naar het',
   opt_facing_auto: 'De zon',
   opt_facing_n: 'Noorden',

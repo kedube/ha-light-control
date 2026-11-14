@@ -104,6 +104,12 @@ export const pt: Translation = {
   opt_style_contemporary: 'Contemporâneo',
   opt_style_brick: 'Tijolo',
   opt_style_european: 'Europeu: reboco e telhas',
+  cfg_house_top_floor: 'Piso superior',
+  opt_top_floor_auto: 'Conforme o estilo da casa',
+  opt_top_floor_roof: 'Sob o telhado',
+  opt_top_floor_full: 'Um piso completo',
+  help_house_top_floor:
+    'Sob o telhado, o piso superior tem tetos inclinados e águas-furtadas. Se o estilo decidir, um piso chamado Sótão fica sempre aí.',
   cfg_house_facing: 'A frente da casa está voltada para',
   opt_facing_auto: 'Para o sol',
   opt_facing_n: 'Norte',

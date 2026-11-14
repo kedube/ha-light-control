@@ -153,8 +153,14 @@ describe('the house model', () => {
       ],
     );
     const m = buildModel({ plan: withGarage, rooms: new Map(), outdoor: many, style: STYLES.brick });
-    const areas = many.map((r) => m.exterior.volumes.get(r.id)!);
-    areas.forEach((a, i) => assert.ok(a, `${many[i].id} is in the picture`));
+    const volumes = many.map((r) => m.exterior.volumes.get(r.id)!);
+    volumes.forEach((a, i) => assert.ok(a, `${many[i].id} is in the picture`));
+    const areas = volumes.map((v) => ({
+      x0: Math.min(...v.points.map((p) => p[0])),
+      x1: Math.max(...v.points.map((p) => p[0])),
+      y0: Math.min(...v.points.map((p) => p[1])),
+      y1: Math.max(...v.points.map((p) => p[1])),
+    }));
     for (let i = 0; i < areas.length; i++) {
       for (let j = i + 1; j < areas.length; j++) {
         const a = areas[i];

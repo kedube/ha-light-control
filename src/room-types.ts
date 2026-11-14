@@ -30,6 +30,15 @@ export type RoomType =
 
 export const OUTDOOR_TYPES: ReadonlySet<RoomType> = new Set(['porch', 'balcony', 'garden', 'driveway', 'pool']);
 
+/** Names for the space under the roof, in the card's languages. */
+const ATTIC =
+  /attic|loft|garret|dachgeschoss|dachboden|spitzboden|zolder|vliering|grenier|combles|mansarde|ático|atico|buhardilla|desván|soffitta|sottotetto|mansarda|poddasze|strych|sótão|sotao/i;
+
+/** Whether a floor is the one under the roof, going by its name or its icon. */
+export function isAtticFloor(name: string, icon?: string | null): boolean {
+  return ATTIC.test(name) || /(?:^|[^\p{L}])dg(?:$|[^\p{L}])/iu.test(name) || icon === 'mdi:home-roof';
+}
+
 interface TypeRule {
   type: RoomType;
   icon: string;
@@ -90,7 +99,7 @@ const RULES: TypeRule[] = [
   {
     type: 'attic',
     icon: 'mdi:home-roof',
-    name: /attic|loft|dachboden|zolder|grenier|ático|buhardilla|soffitta|mansarda|strych|sótão/i,
+    name: ATTIC,
   },
   { type: 'stairs', icon: 'mdi:stairs', name: /stair|landing|treppe|trap|escalier|escalera|scala|schody|escada/i },
   {

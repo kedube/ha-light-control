@@ -6,6 +6,7 @@ import type { FixtureKind } from '../fixtures.ts';
 import type { HouseStyle } from '../materials.ts';
 import { MeshBuilder } from '../mesh.ts';
 import type { HousePlan, PlanCell, PlanStory } from '../plan.ts';
+import { loftWindows, massingOf, type LoftWindows, type Massing, type TopFloor } from './massing.ts';
 
 /** How a light outdoors is mounted. */
 export type OutdoorMount = 'post' | 'bollard' | 'wall' | 'string';
@@ -28,6 +29,8 @@ export interface ModelInput {
   /** Outdoor areas, in Home Assistant order. */
   outdoor: RoomInput[];
   style: HouseStyle;
+  /** Whether the top floor is built into the roof; by default the design and the floor's name decide. */
+  topFloor?: TopFloor;
 }
 
 /** A point or a box in plan space: x along the front wall, y from back to front, z up. */
@@ -149,6 +152,10 @@ export class Context {
   readonly input: ModelInput;
   readonly style: HouseStyle;
   readonly groups: Groups;
+  /** The main roof, and the floor under it if there is one. */
+  readonly roof: Massing;
+  /** The windows of the floor under the roof. */
+  readonly loftWindows: LoftWindows;
   readonly rooms: RoomSlot[] = [];
   readonly fixtures: Fixture[] = [];
   readonly spills: Spill[] = [];
@@ -161,6 +168,8 @@ export class Context {
     this.plan = input.plan;
     this.style = input.style;
     this.groups = groupsFor(input.plan);
+    this.roof = massingOf(input.plan, input.style, input.topFloor);
+    this.loftWindows = loftWindows(input.plan, input.style, this.roof);
     this.rooms.push({ index: 0, id: null, story: -1, first: 0, count: 0, area: 0 });
   }
 

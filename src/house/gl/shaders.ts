@@ -1,6 +1,7 @@
 // GLSL for the 3D house. Everything is procedural: there are no image files to load, so the
 // boards, bricks, shingles, grass and clouds are all drawn by these programs.
 
+import { MAX_BIRDS, MAX_GLOWS, MAX_METEORS, MAX_PUFFS, MAX_SKY_LIGHTS } from '../life.ts';
 import { MAT } from '../materials.ts';
 import { MIE_G } from '../sky.ts';
 
@@ -75,7 +76,7 @@ vec3 skyAbove(vec3 d) {
 /** The surroundings as a mirror would show them: sky above, hazy ground below. */
 vec3 skyAround(vec3 d) {
   vec3 sky = skyAbove(d);
-  return mix(sky, uGround, smoothstep(0.0, -0.25, d.y));
+  return mix(sky, uGround, (1.0 - smoothstep(-0.25, 0.0, d.y)));
 }
 `;
 
@@ -237,7 +238,7 @@ Surface surface(vec3 base) {
     float f = fract(row);
     float id = floor(row);
     float k = visible(0.17);
-    float shade = (1.0 - 0.42 * smoothstep(0.82, 0.99, f)) * (1.0 + 0.07 * smoothstep(0.16, 0.0, f));
+    float shade = (1.0 - 0.42 * smoothstep(0.82, 0.99, f)) * (1.0 + 0.07 * (1.0 - smoothstep(0.0, 0.16, f)));
     s.albedo *= mix(0.94, shade, k) * (0.975 + 0.05 * hash12(vec2(id, 3.0)));
     s.albedo *= 0.96 + 0.08 * vnoise(vec2(uv.x * 2.0, uv.y * 30.0)) * k;
     s.bump.y = 0.18 * k;
@@ -250,7 +251,7 @@ Surface surface(vec3 base) {
     vec2 id = floor(b);
     vec2 f = fract(b);
     float k = visible(0.1);
-    float inside = smoothstep(0.0, 0.05, f.x) * smoothstep(1.0, 0.95, f.x) * smoothstep(0.0, 0.14, f.y) * smoothstep(1.0, 0.86, f.y);
+    float inside = smoothstep(0.0, 0.05, f.x) * (1.0 - smoothstep(0.95, 1.0, f.x)) * smoothstep(0.0, 0.14, f.y) * (1.0 - smoothstep(0.86, 1.0, f.y));
     float tone = hash12(id);
     vec3 brick = base * (0.74 + 0.5 * tone);
     brick = mix(brick, brick * vec3(0.72, 0.7, 0.78), step(0.86, hash12(id + 7.0)));
@@ -336,7 +337,7 @@ Surface surface(vec3 base) {
       f.x = (f.x - split) / (1.0 - split);
     } else f.x /= split;
     float k = visible(0.22);
-    float inside = smoothstep(0.0, 0.1, f.x) * smoothstep(1.0, 0.9, f.x) * smoothstep(0.0, 0.14, f.y) * smoothstep(1.0, 0.86, f.y);
+    float inside = smoothstep(0.0, 0.1, f.x) * (1.0 - smoothstep(0.9, 1.0, f.x)) * smoothstep(0.0, 0.14, f.y) * (1.0 - smoothstep(0.86, 1.0, f.y));
     float tone = 0.68 + 0.56 * hash12(id * 1.7 + 4.0);
     vec3 stone = base * tone * mix(vec3(1.06, 1.0, 0.92), vec3(0.92, 0.98, 1.06), hash12(id + 9.0));
     stone *= 0.86 + 0.26 * vnoise(uv * 26.0);
@@ -410,7 +411,7 @@ Surface surface(vec3 base) {
     s.albedo *= (0.7 + 0.42 * big + 0.2 * mid) * (0.82 + 0.36 * fine * visible(0.05)) * (0.94 + 0.12 * stripe);
     // Drier, yellower patches and a few darker ones.
     s.albedo = mix(s.albedo, s.albedo * vec3(1.3, 1.12, 0.6), smoothstep(0.52, 0.78, mid) * 0.34);
-    s.albedo = mix(s.albedo, s.albedo * vec3(0.7, 0.86, 0.74), smoothstep(0.58, 0.3, big) * 0.4);
+    s.albedo = mix(s.albedo, s.albedo * vec3(0.7, 0.86, 0.74), (1.0 - smoothstep(0.3, 0.58, big)) * 0.4);
     s.rough = 1.0;
     s.wrap = 0.35;
   } else if (vMat == ${M.soil}) {
@@ -478,7 +479,7 @@ Surface surface(vec3 base) {
   } else if (vMat == ${M.water}) {
     vec2 w = uv * 2.6;
     float ridge = abs(vnoise(w * 1.6) - 0.5) + abs(vnoise(w * 3.1 + 9.0) - 0.5) * 0.5;
-    s.albedo *= 0.7 + 0.9 * smoothstep(0.2, 0.0, ridge);
+    s.albedo *= 0.7 + 0.9 * (1.0 - smoothstep(0.0, 0.2, ridge));
     s.bump = (vec2(vnoise(w * 2.2 + 3.0), vnoise(w * 2.2 + 11.0)) - 0.5) * 0.3;
     s.rough = 0.06;
     s.spec = 0.9;
@@ -809,9 +810,30 @@ uniform vec4 uDrift;         // where the two cloud layers have drifted to
 uniform vec3 uCloudLit;
 uniform vec3 uCloudDark;
 uniform float uTime;
-uniform vec4 uMeteor;        // a shooting star: from (xy) to (zw) across the picture
-uniform float uMeteorAge;    // 0 to 1 while it falls, negative when there is none
+// What lives around the house, worked out each frame (see life.ts), in CSS pixels from the top left.
+uniform sampler2D uDepth;    // how far the house is at each pixel, to hide what is behind it
+uniform vec2 uCss;           // the picture's size in CSS pixels
+uniform vec2 uPictureSize;   // and in the pixels drawn
+uniform vec4 uBirds[${MAX_BIRDS * 5}];
+uniform int uBirdCount;
+uniform vec4 uGlows[${MAX_GLOWS * 2}];
+uniform int uGlowCount;
+uniform vec4 uPuffs[${MAX_PUFFS * 2}];
+uniform int uPuffCount;
+uniform vec4 uMeteors[${MAX_METEORS * 3}];
+uniform int uMeteorCount;
+uniform vec4 uLights[${MAX_SKY_LIGHTS * 2}];
+uniform int uLightCount;
+uniform vec4 uTrail[2];
 out vec4 outColor;
+
+/** How far a point is from a segment, and how far along the segment its nearest point lies. */
+vec2 toSegment(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+  return vec2(length(pa - ba * h), h);
+}
 
 /** How thick the cloud is at a point of the cloud layer: big shapes, with billows eaten out of their edges. */
 float cloudAt(vec2 p) {
@@ -853,7 +875,7 @@ vec3 sky(vec2 uv) {
   vec3 d = normalize(uSkyForward + ndc.x * uSkyRight + ndc.y * uSkyUp);
   vec3 c = skyAbove(d);
   // Below the horizon lies a bank of haze, a little dimmer than the horizon itself.
-  c *= mix(1.0, 0.8, smoothstep(0.0, -0.12, d.y));
+  c *= mix(1.0, 0.8, (1.0 - smoothstep(-0.12, 0.0, d.y)));
 
   float sunCos = dot(d, uSunDir);
   float sunAngle = acos(clamp(sunCos, -1.0, 1.0));
@@ -864,16 +886,33 @@ vec3 sky(vec2 uv) {
   behind += uSunDisc * (0.05 * exp(-pow(sunAngle / 0.022, 2.0)) + 0.008 * exp(-pow(sunAngle / 0.09, 2.0)));
   behind *= smoothstep(-0.012, 0.004, d.y);
 
-  // A shooting star: a short streak, brightest at its head.
-  if (uMeteorAge >= 0.0) {
-    vec2 head = mix(uMeteor.xy, uMeteor.zw, uMeteorAge);
-    vec2 along = uMeteor.zw - uMeteor.xy;
-    vec2 tail = head - along * 0.22 * smoothstep(0.0, 0.25, uMeteorAge);
-    vec2 pa = ndc - tail;
-    vec2 ba = head - tail;
-    float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
-    float away = length(pa - ba * t) / (uPixel * 60.0);
-    behind += vec3(0.9, 0.95, 1.0) * exp(-away * away) * t * t * sin(uMeteorAge * PI) * 1.6 * uStars;
+  // Shooting stars: a streak that grows from where it starts, brightest at its head. A fireball
+  // glows around its head and flares before it is gone; some leave a train that glows a while.
+  vec2 q = vec2(uv.x, 1.0 - uv.y) * uCss;
+  for (int i = 0; i < ${MAX_METEORS}; i++) {
+    if (i >= uMeteorCount) break;
+    vec4 path = uMeteors[i * 3];
+    vec4 m = uMeteors[i * 3 + 1];   // how far along, brightness, width, fireball
+    vec4 tint = uMeteors[i * 3 + 2]; // color, and the glow of its train
+    float age = m.x;
+    vec2 head = mix(path.xy, path.zw, age);
+    vec2 tail = mix(path.xy, path.zw, max(0.0, age - mix(0.3, 0.42, m.w)));
+    vec2 s = toSegment(q, tail, head);
+    float life = smoothstep(0.0, 0.12, age) * (1.0 - smoothstep(0.78, 1.0, age));
+    life *= 1.0 + m.w * 1.6 * exp(-pow((age - 0.82) / 0.07, 2.0));
+    behind += tint.rgb * exp(-pow(s.x / m.z, 2.0)) * s.y * s.y * m.y * life * uStars;
+    behind += tint.rgb * m.w * exp(-pow(length(q - head) / (m.z * 2.4), 2.0)) * m.y * life * 0.16 * uStars;
+    if (tint.w > 0.0) {
+      vec2 t = toSegment(q, mix(path.xy, path.zw, 0.15), head);
+      behind += vec3(0.42, 0.85, 0.55) * exp(-pow(t.x / (m.z * 1.8), 2.0)) * smoothstep(0.0, 0.3, t.y) * tint.w * 0.13 * uStars;
+    }
+  }
+  // Lights crossing the sky: a satellite, or a plane's lights at night and its glint by day.
+  for (int i = 0; i < ${MAX_SKY_LIGHTS}; i++) {
+    if (i >= uLightCount) break;
+    vec4 l = uLights[i * 2];
+    float r = length(q - l.xy) / l.z;
+    behind += uLights[i * 2 + 1].rgb * exp(-r * r);
   }
 
   // The moon, lit from the side the sun is on.
@@ -895,6 +934,14 @@ vec3 sky(vec2 uv) {
   }
   // A soft glow around it, as thin haze gives a bright moon.
   if (uMoonDisc.r > 0.0) behind += uMoonDisc * 0.02 * exp(-pow(moonAngle / (uMoonSize * 3.2), 2.0));
+
+  // The trail of a plane high up: thin behind it, spreading and fading as it ages. Cloud hides it.
+  if (uTrail[1].w > 0.0) {
+    vec2 s = toSegment(q, uTrail[0].xy, uTrail[0].zw);
+    float width = mix(uTrail[1].x, uTrail[1].y, s.y);
+    float a = exp(-pow(s.x / width, 2.0)) * uTrail[1].z * (1.0 - s.y) * smoothstep(0.0, 0.04, s.y);
+    c = mix(c, uCloudLit * 1.05, clamp(a, 0.0, 1.0));
+  }
 
   // Clouds on a layer overhead, seen in perspective; they hide what is behind them.
   float cover = 0.0;
@@ -922,10 +969,63 @@ vec3 sky(vec2 uv) {
   return mix(c, cloud, cover);
 }
 
+/**
+ * What flies or glows around the house, over the sky and the house alike, but hidden wherever the
+ * house is nearer: smoke from the chimney, birds and bats, and fireflies.
+ */
+vec3 creatures(vec3 c, vec2 q, float px, float depth) {
+  for (int i = 0; i < ${MAX_PUFFS}; i++) {
+    if (i >= uPuffCount) break;
+    vec4 at = uPuffs[i * 2];
+    vec4 look = uPuffs[i * 2 + 1];
+    vec2 d = (q - at.xy) / max(at.z, 0.5);
+    float r2 = dot(d, d);
+    if (r2 > 1.0 || at.w > depth) continue;
+    float wisp = texture(uClouds, d * 0.11 + vec2(float(i) * 0.173, uTime * 0.004)).g;
+    float a = look.a * (1.0 - smoothstep(0.1, 1.0, sqrt(r2))) * (0.65 + 0.7 * wisp);
+    c = mix(c, look.rgb, clamp(a, 0.0, 1.0));
+  }
+  for (int i = 0; i < ${MAX_BIRDS}; i++) {
+    if (i >= uBirdCount) break;
+    vec4 body = uBirds[i * 5];      // head, tail
+    vec4 left = uBirds[i * 5 + 1];  // elbow, tip
+    vec4 right = uBirds[i * 5 + 2];
+    vec4 k = uBirds[i * 5 + 3];     // depth, thickness, opacity
+    if (k.x > depth) continue;
+    vec2 root = mix(body.zw, body.xy, 0.55);
+    float reach = max(max(length(left.zw - root), length(right.zw - root)), length(body.zw - root));
+    if (length(q - root) > reach + k.y + 2.0 * px) continue;
+    float w = k.y;
+    // A body, and two wings from its shoulders, thinning toward the tips.
+    float d = toSegment(q, body.zw, body.xy).x - w;
+    vec2 e = toSegment(q, root, left.xy);
+    d = min(d, e.x - w * mix(0.95, 0.7, e.y));
+    e = toSegment(q, left.xy, left.zw);
+    d = min(d, e.x - w * mix(0.7, 0.2, e.y));
+    e = toSegment(q, root, right.xy);
+    d = min(d, e.x - w * mix(0.95, 0.7, e.y));
+    e = toSegment(q, right.xy, right.zw);
+    d = min(d, e.x - w * mix(0.7, 0.2, e.y));
+    c = mix(c, uBirds[i * 5 + 4].rgb, clamp(0.5 - d / px, 0.0, 1.0) * k.z);
+  }
+  for (int i = 0; i < ${MAX_GLOWS}; i++) {
+    if (i >= uGlowCount) break;
+    vec4 at = uGlows[i * 2];
+    vec4 look = uGlows[i * 2 + 1];
+    vec2 d = q - at.xy;
+    float r2 = dot(d, d);
+    if (r2 > at.z * at.z * 6.0 || at.w > depth) continue;
+    c += look.rgb * (exp(-r2 / max(look.a * look.a, px * px)) + 0.3 * exp(-r2 / (at.z * at.z)));
+  }
+  return c;
+}
+
 void main() {
   vec4 house = texture(uHouse, vUv) * uHouseOn;
   vec3 c = house.rgb;
   if (house.a < 0.998) c += develop(sky(vUv)) * (1.0 - house.a);
+  float depth = uHouseOn > 0.5 ? texture(uDepth, vUv).r : 1.0;
+  c = creatures(c, vec2(vUv.x, 1.0 - vUv.y) * uCss, uCss.x / uPictureSize.x, depth);
   // A slight darkening toward the corners, and a little noise so gradients don't band.
   vec2 v = vUv - 0.5;
   c *= 1.0 - dot(v, v) * 0.22;

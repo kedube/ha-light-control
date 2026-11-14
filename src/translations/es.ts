@@ -104,6 +104,12 @@ export const es: Translation = {
   opt_style_contemporary: 'Contemporáneo',
   opt_style_brick: 'Ladrillo',
   opt_style_european: 'Europeo: revoco y tejas',
+  cfg_house_top_floor: 'Planta superior',
+  opt_top_floor_auto: 'Según el estilo de la casa',
+  opt_top_floor_roof: 'Bajo el tejado',
+  opt_top_floor_full: 'Una planta completa',
+  help_house_top_floor:
+    'Bajo el tejado, la planta superior tiene techos inclinados y buhardillas. Si decide el estilo, una planta llamada Ático o Buhardilla siempre va ahí.',
   cfg_house_facing: 'La fachada de la casa mira al',
   opt_facing_auto: 'Hacia el sol',
   opt_facing_n: 'Norte',
