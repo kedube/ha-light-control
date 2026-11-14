@@ -21,7 +21,7 @@ import {
   type RoomSlot,
   type Spill,
 } from './model/context.ts';
-import { buildEntry } from './model/entry.ts';
+import { buildBackStep, buildEntry } from './model/entry.ts';
 import { buildInterior } from './model/interior.ts';
 import { chimneySpot, under, WING_FLOOR, wingHeight } from './model/massing.ts';
 import { buildShell } from './model/shell.ts';
@@ -29,7 +29,7 @@ import { buildSite, layoutSite } from './model/site.ts';
 import { at, frameOf } from './model/walls.ts';
 
 export type { Box, Fixture, Groups, ModelInput, Point, RoomInput, LightInput } from './model/context.ts';
-export type { TopFloor } from './model/massing.ts';
+export { facadeFor, type DormerChoice, type TopFloor } from './model/massing.ts';
 export { fixtureKind, type FixtureKind } from './fixtures.ts';
 
 /** Something that can be picked: the points around it, in plan space. */
@@ -90,6 +90,7 @@ export function buildModel(input: ModelInput): Model {
   const site = layoutSite(plan, input.outdoor, input.style);
   const glazing = buildShell(c);
   buildEntry(c, site.entry);
+  buildBackStep(c);
   buildInterior(c);
   // Everything outdoors shares one list of lamps: the garden's own, then the light from windows.
   const firstOutdoor = c.slotCount;

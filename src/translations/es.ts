@@ -110,6 +110,12 @@ export const es: Translation = {
   opt_top_floor_full: 'Una planta completa',
   help_house_top_floor:
     'Bajo el tejado, la planta superior tiene techos inclinados y buhardillas. Si decide el estilo, una planta llamada Ático o Buhardilla siempre va ahí.',
+  cfg_house_dormers: 'Buhardillas',
+  opt_dormers_auto: 'Según el estilo de la casa',
+  opt_dormers_on: 'Sí',
+  opt_dormers_off: 'No',
+  help_house_dormers:
+    'Sí pone buhardillas en cualquier tejado con pendiente suficiente, también sobre un desván sin habitar. No las quita, y las habitaciones bajo el tejado reciben luz por ventanas en el faldón.',
   cfg_house_facing: 'La fachada de la casa mira al',
   opt_facing_auto: 'Hacia el sol',
   opt_facing_n: 'Norte',

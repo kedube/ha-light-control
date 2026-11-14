@@ -107,6 +107,12 @@ export const it: Translation = {
   opt_top_floor_full: 'Un piano intero',
   help_house_top_floor:
     'Sotto il tetto, l’ultimo piano ha soffitti inclinati e abbaini. Se decide lo stile, un piano chiamato Mansarda o Soffitta è sempre lì.',
+  cfg_house_dormers: 'Abbaini',
+  opt_dormers_auto: 'Secondo lo stile della casa',
+  opt_dormers_on: 'Sì',
+  opt_dormers_off: 'No',
+  help_house_dormers:
+    'Sì mette abbaini su ogni tetto abbastanza ripido, anche sopra una soffitta disabitata. No li toglie: le stanze sotto il tetto prendono luce da finestre sul tetto.',
   cfg_house_facing: 'La facciata della casa guarda a',
   opt_facing_auto: 'Verso il sole',
   opt_facing_n: 'Nord',

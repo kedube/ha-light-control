@@ -110,6 +110,12 @@ export const pt: Translation = {
   opt_top_floor_full: 'Um piso completo',
   help_house_top_floor:
     'Sob o telhado, o piso superior tem tetos inclinados e águas-furtadas. Se o estilo decidir, um piso chamado Sótão fica sempre aí.',
+  cfg_house_dormers: 'Águas-furtadas',
+  opt_dormers_auto: 'Conforme o estilo da casa',
+  opt_dormers_on: 'Sim',
+  opt_dormers_off: 'Não',
+  help_house_dormers:
+    'Sim põe águas-furtadas em qualquer telhado inclinado o bastante, também sobre um sótão desabitado. Não as retira, e os quartos sob o telhado recebem luz por janelas no telhado.',
   cfg_house_facing: 'A frente da casa está voltada para',
   opt_facing_auto: 'Para o sol',
   opt_facing_n: 'Norte',

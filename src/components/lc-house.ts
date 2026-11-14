@@ -26,6 +26,8 @@ import {
   type LightState,
   type Model,
   type Point,
+  facadeFor,
+  type DormerChoice,
   type Tables,
   type TopFloor,
   type ViewData,
@@ -41,7 +43,7 @@ import { fireEvent } from '../utils.ts';
 export { skyMode, type SunInfo } from '../house/sky.ts';
 export { GROUND_ID } from '../house/plan.ts';
 export type { StyleName } from '../house/materials.ts';
-export type { TopFloor } from '../house/model.ts';
+export type { DormerChoice, TopFloor } from '../house/model.ts';
 
 export interface HouseLight {
   id: string;
@@ -166,6 +168,7 @@ export class LcHouse extends LitElement {
     sun: { attribute: false },
     styleName: { attribute: false },
     topFloor: { attribute: false },
+    dormers: { attribute: false },
     colors: { attribute: false },
     facing: { attribute: false },
     clouds: { attribute: false },
@@ -194,6 +197,8 @@ export class LcHouse extends LitElement {
   declare styleName: StyleName;
   /** Whether the top floor is built into the roof; 'auto' leaves it to the design and the floor's name. */
   declare topFloor: TopFloor;
+  /** Whether the roof has dormers; 'auto' leaves it to the design. */
+  declare dormers: DormerChoice;
   /** Colors that replace the style's own. */
   declare colors?: HouseColors;
   /** The compass direction the front of the house faces, in degrees; south by default. */
@@ -282,6 +287,7 @@ export class LcHouse extends LitElement {
     this.selected = null;
     this.styleName = 'colonial';
     this.topFloor = 'auto';
+    this.dormers = 'auto';
     this.facing = 180;
     this.motion = true;
     this.southern = false;
@@ -360,12 +366,16 @@ export class LcHouse extends LitElement {
 
   // ─── Model ─────────────────────────────────────────────────────────────────
 
+  /** The floor plan, made for the design: its rooms are fitted in behind the design's windows. */
   private planFor(): HousePlan {
     const indoor = this.rooms.filter((r) => !r.outdoor);
     const floorIds = new Set(this.floors.map((f) => f.id));
     const key = JSON.stringify([
       this.floors.map((f) => [f.id, f.level, Boolean(f.attic)]),
       indoor.map((r) => [r.id, r.type, r.floorId]),
+      this.styleName,
+      this.topFloor,
+      this.dormers,
     ]);
     if (key !== this.planKey || !this.plan) {
       const input = (list: HouseRoom[]) => list.map((r) => ({ id: r.id, type: r.type }));
@@ -377,6 +387,7 @@ export class LcHouse extends LitElement {
           rooms: input(indoor.filter((r) => r.floorId === f.id)),
         })),
         input(indoor.filter((r) => !r.floorId || !floorIds.has(r.floorId))),
+        facadeFor(STYLES[this.styleName] ?? STYLES.colonial, this.topFloor, this.dormers),
       );
       this.planKey = key;
     }
@@ -404,12 +415,14 @@ export class LcHouse extends LitElement {
       this.planKey,
       this.styleName,
       this.topFloor,
+      this.dormers,
       this.colors,
-      this.rooms.map((r) => [r.id, r.type, r.outdoor, r.lights.map((l) => [l.id, l.name])]),
+      this.rooms.map((r) => [r.id, r.name, r.type, r.outdoor, r.lights.map((l) => [l.id, l.name])]),
     ]);
     if (key !== this.modelKey || !this.model) {
       const room = (r: HouseRoom) => ({
         id: r.id,
+        name: r.name,
         type: r.type,
         lights: r.lights.map((l) => ({ id: l.id, name: l.name })),
       });
@@ -419,6 +432,7 @@ export class LcHouse extends LitElement {
         outdoor: this.rooms.filter((r) => r.outdoor).map(room),
         style: this.houseStyle(),
         topFloor: this.topFloor,
+        dormers: this.dormers,
       });
       this.modelKey = key;
       // A new house: nothing to animate from.

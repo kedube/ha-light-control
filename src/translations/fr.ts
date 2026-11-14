@@ -110,6 +110,12 @@ export const fr: Translation = {
   opt_top_floor_full: 'Un étage complet',
   help_house_top_floor:
     'Sous le toit, le dernier étage a des plafonds en pente et des lucarnes. Si le style décide, un étage nommé Grenier ou Combles s’y trouve toujours.',
+  cfg_house_dormers: 'Lucarnes',
+  opt_dormers_auto: 'Selon le style de la maison',
+  opt_dormers_on: 'Oui',
+  opt_dormers_off: 'Non',
+  help_house_dormers:
+    'Oui pose des lucarnes sur tout toit assez pentu, même au-dessus d’un grenier inhabité. Non les retire : les pièces sous le toit prennent alors le jour par des fenêtres de toit.',
   cfg_house_facing: 'Orientation de la façade',
   opt_facing_auto: 'Vers le soleil',
   opt_facing_n: 'Nord',

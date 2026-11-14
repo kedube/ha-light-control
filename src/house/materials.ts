@@ -60,6 +60,8 @@ export const MAT = {
   seam: 35,
   /** A shrub in bloom, its flowers all one color. */
   bloom: 36,
+  /** Colored bulbs, as on a Christmas tree: lit, each shines in its own color. */
+  bulbs: 37,
 } as const;
 
 export type MaterialId = (typeof MAT)[keyof typeof MAT];
@@ -520,6 +522,9 @@ export const STYLES = {
 
 export type StyleName = keyof typeof STYLES;
 export const STYLE_NAMES = Object.keys(STYLES) as StyleName[];
+
+/** How wide the windows of a design are: every window in its walls is this wide, where its bays allow. */
+export const windowWidth = (style: HouseStyle): number => 0.98 * style.window.scale[0];
 
 const BRICK = ['GB', 'IE', 'NL', 'BE', 'LU'];
 const EUROPEAN = [

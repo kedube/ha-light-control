@@ -110,6 +110,12 @@ export const de: Translation = {
   opt_top_floor_full: 'Als Vollgeschoss',
   help_house_top_floor:
     'Unter dem Dach hat das oberste Stockwerk Dachschrägen und Gauben. Entscheidet der Baustil, liegt ein Stockwerk namens Dachgeschoss oder Dachboden immer dort.',
+  cfg_house_dormers: 'Gauben',
+  opt_dormers_auto: 'Wie beim Baustil üblich',
+  opt_dormers_on: 'An',
+  opt_dormers_off: 'Aus',
+  help_house_dormers:
+    'An setzt Gauben auf jedes Dach, das steil genug dafür ist, auch über einem unbewohnten Dachboden. Aus lässt sie weg; die Räume unter dem Dach bekommen dann Dachfenster.',
   cfg_house_facing: 'Die Vorderseite des Hauses zeigt nach',
   opt_facing_auto: 'Zur Sonne',
   opt_facing_n: 'Norden',

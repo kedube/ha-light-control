@@ -175,6 +175,24 @@ describe('The 3D house', () => {
     await page.close();
   });
 
+  it('stands dormers on the roof when asked, even over an attic nobody lives in', async () => {
+    const page = await open('&style=colonial');
+    const house = () =>
+      page.locator('lc-house').evaluate((el) => ({ dormers: el.dormers, vertices: el.model.mesh.vertexCount }));
+    const plain = await house();
+    assert.equal(plain.dormers, 'auto');
+    await page.evaluate(() => {
+      const card = document.querySelector('light-control-card');
+      card.setConfig({ type: 'custom:light-control-card', house_style: 'colonial', house_dormers: 'on' });
+    });
+    await page.waitForFunction((before) => {
+      const el = document.querySelector('light-control-card').shadowRoot.querySelector('lc-house');
+      return el.dormers === 'on' && el.model.mesh.vertexCount > before;
+    }, plain.vertices);
+    assert.deepEqual(page.errors, []);
+    await page.close();
+  });
+
   it('brings the sky to life when it moves, and keeps it still when motion is reduced', async () => {
     const happen = async (page, what) => {
       await page.locator('lc-house').evaluate((el, list) => list.forEach((x) => el.happen(x)), what.split(','));

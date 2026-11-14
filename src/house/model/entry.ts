@@ -3,7 +3,7 @@
 
 import { MAT, PAINT, type HouseStyle } from '../materials.ts';
 import { SKIP, type Paint } from '../mesh.ts';
-import { frontDoor, type HousePlan, type Rect } from '../plan.ts';
+import { backDoor, frontDoor, type HousePlan, type Rect } from '../plan.ts';
 import type { Context } from './context.ts';
 import { FASCIA } from './massing.ts';
 
@@ -54,6 +54,32 @@ export function planEntry(plan: HousePlan, style: HouseStyle): Entry | null {
 }
 
 const trimOf = (style: HouseStyle): Paint => ({ material: MAT.plain, color: style.trim });
+
+/** Whether an entry has a porch to sit on, as wide as the front or most of it. */
+export const wideEntry = (style: HouseStyle): boolean =>
+  style.entry === 'porch' || style.entry === 'wrap' || style.entry === 'loggia';
+
+/**
+ * How high the roof over the door begins: the top of its posts. Where the eaves come down low,
+ * the entry stands a little lower, if that is all it takes to fit in under them; `fits` says
+ * whether it does.
+ */
+export function entryTop(c: Context): { top: number; fits: boolean } {
+  const style = c.style;
+  const roof = c.roof;
+  const ground = c.ground;
+  const base = c.plan.base;
+  const low =
+    (roof.form === 'gable' || roof.form === 'hip') &&
+    ground !== undefined &&
+    (c.top === ground || roof.loft?.index === ground.index + 1);
+  const clear = low ? roof.top - style.eave * roof.pitch - FASCIA - base : Infinity;
+  // How far each kind of entry stands above the head of its posts.
+  const crown = wideEntry(style) ? 0.78 : style.entry === 'portico' ? 0.74 : style.entry === 'canopy' ? 0.14 : 0.42;
+  const room = clear - crown - 0.03;
+  const fits = room >= 2.3;
+  return { top: base + (fits ? Math.min(2.45, room) : 2.45), fits };
+}
 
 /** A column of the style's kind, from the deck up to the beam it carries. */
 function column(c: Context, x: number, y: number, z0: number, z1: number, group: number, lower: number): void {
@@ -325,7 +351,7 @@ export function buildEntry(c: Context, entry: Entry | null): void {
   const r = entry.deck;
   const x = entry.door;
   const trim = trimOf(style);
-  const wide = style.entry === 'porch' || style.entry === 'wrap' || style.entry === 'loggia';
+  const wide = wideEntry(style);
   const masonry = style.entry === 'loggia' || style.entry === 'canopy' || !wide;
   const floor =
     style.entry === 'loggia' ? PAINT.terracotta : masonry ? { ...PAINT.stone, material: MAT.concrete } : PAINT.deck;
@@ -351,16 +377,8 @@ export function buildEntry(c: Context, entry: Entry | null): void {
   });
 
   // Where the roof begins right above the ground floor, whatever roofs the door has to fit in
-  // under the eaves: it stands a little lower if that is all it takes.
-  const roof = c.roof;
-  const low =
-    (roof.form === 'gable' || roof.form === 'hip') && (c.top === ground || roof.loft?.index === ground.index + 1);
-  const clear = low ? roof.top - style.eave * roof.pitch - FASCIA - base : Infinity;
-  // How far each kind of entry stands above the head of its posts.
-  const crown = wide ? 0.78 : style.entry === 'portico' ? 0.74 : style.entry === 'canopy' ? 0.14 : 0.42;
-  const room = clear - crown - 0.03;
-  const fits = room >= 2.3;
-  const top = base + (fits ? Math.min(2.45, room) : 2.45);
+  // under the eaves.
+  const { top, fits } = entryTop(c);
   const edge = r.y1 - 0.14;
   if (wide) {
     // Posts along the front, either side of the steps and at the corners.
@@ -501,4 +519,23 @@ export function buildEntry(c: Context, entry: Entry | null): void {
       }
     });
   }
+}
+
+/** A landing outside the back door, and steps down from it to the garden. */
+export function buildBackStep(c: Context): void {
+  const door = backDoor(c.plan);
+  if (!door || !c.ground) return;
+  const m = c.mesh;
+  const base = c.plan.base;
+  const x = door.x;
+  const count = Math.max(1, Math.round(base / 0.18));
+  const rise = base / count;
+  const deep = 0.95;
+  // Behind the house: it stays when the front of the plot is lifted away for a basement.
+  m.with({ group: c.groups.base, room: 0, ...PAINT.stone, material: MAT.concrete }, () => {
+    m.box(x - 0.75, -deep, 0, x + 0.75, 0, base - 0.02, SKIP.bottom);
+    for (let i = 1; i < count; i++) {
+      m.box(x - 0.62, -deep - i * 0.3, 0, x + 0.62, -deep - (i - 1) * 0.3, base - 0.02 - i * rise, SKIP.bottom);
+    }
+  });
 }

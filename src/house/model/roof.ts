@@ -3,7 +3,7 @@
 
 import { MAT, PAINT, type HouseStyle } from '../materials.ts';
 import { SKIP, type Paint, type Region } from '../mesh.ts';
-import type { PlanStory } from '../plan.ts';
+import type { StoryShape } from '../plan.ts';
 import { EXT_T, type Context, type Point } from './context.ts';
 import { chimneySpot, FASCIA, type Dormer } from './massing.ts';
 import { wallRun, windowUnit, type Frame, type Opening } from './walls.ts';
@@ -119,9 +119,10 @@ function eaveTrim(
 /**
  * A dormer: a window of the floor under the roof, standing out of the slope under a roof of its
  * own. A gabled one holds a single window; a shed or a box dormer holds a row of them. Its face is
- * a real wall, and the slope is open behind it, so it looks into the room.
+ * a real wall, and the slope is open behind it, so it looks into the room. On an attic nobody lives
+ * in (`story` null) it stands on the slope, and its glass is dark.
  */
-function dormer(c: Context, r: RoofSpan, d: Dormer, story: PlanStory): void {
+function dormer(c: Context, r: RoofSpan, d: Dormer, story: StoryShape | null): void {
   const m = c.mesh;
   const style = c.style;
   const p = r.pitch;
@@ -132,7 +133,9 @@ function dormer(c: Context, r: RoofSpan, d: Dormer, story: PlanStory): void {
   const y = (t: number) => wall - n * t;
   const face = y(d.set);
   const base = r.top + d.set * p;
-  const eave = story.z + d.eave;
+  // Its heights are given above the floor under the roof: the attic's floor is where the roof begins.
+  const floor = story ? story.z : r.top;
+  const eave = floor + d.eave;
   // A box dormer is clad in lead, as flat roofs are.
   const cladding: Paint = d.kind === 'box' ? { material: MAT.plain, color: [96, 98, 104] } : style.gable;
   const f: Frame = { ox: d.x - d.half, oy: face, ax: 1, ay: 0, nx: 0, ny: n, length: d.half * 2 };
@@ -141,12 +144,12 @@ function dormer(c: Context, r: RoofSpan, d: Dormer, story: PlanStory): void {
   windows.forEach((w, i) => {
     const from = i === 0 ? 0 : (windows[i - 1].x + w.x) / 2 - f.ox;
     const to = i === windows.length - 1 ? f.length : (w.x + windows[i + 1].x) / 2 - f.ox;
-    const room = c.roomOf(w.cell, story);
+    const room = w.cell && story ? c.roomOf(w.cell, story) : 0;
     const opening: Opening = {
       a: w.x - w.half - f.ox,
       b: w.x + w.half - f.ox,
-      z0: story.z + d.sill - base,
-      z1: story.z + d.head - base,
+      z0: floor + d.sill - base,
+      z1: floor + d.head - base,
       kind: 'window',
     };
     wallRun(
@@ -162,7 +165,7 @@ function dormer(c: Context, r: RoofSpan, d: Dormer, story: PlanStory): void {
       { lower: group, upper: group },
       null,
     );
-    windowUnit(c, f, opening, base, room, group, { shutters: null, arched: false, box: false });
+    windowUnit(c, f, opening, base, room, group, { shutters: null, arched: false, box: false, dark: !story });
   });
 
   m.with({ group, room: 0 }, () => {
@@ -292,7 +295,7 @@ function dormer(c: Context, r: RoofSpan, d: Dormer, story: PlanStory): void {
  * A window lying in a slope of the roof: glass in a slim frame, lit by the room under it. `pitch`
  * is that of the slope it lies in.
  */
-function skylight(c: Context, r: RoofSpan, d: Dormer, story: PlanStory, pitch: number): void {
+function skylight(c: Context, r: RoofSpan, d: Dormer, story: StoryShape, pitch: number): void {
   const m = c.mesh;
   const len = Math.hypot(1, pitch);
   // The wall the slope rises from: u runs along it, t in from it.
@@ -313,14 +316,16 @@ function skylight(c: Context, r: RoofSpan, d: Dormer, story: PlanStory, pitch: n
   /** A rectangle lying on the slope, lifted off it by `up`. */
   const pane = (a: number, b: number, t0: number, t1: number, up: number) =>
     m.quad(on(a, t0, up), on(b, t0, up), on(b, t1, up), on(a, t1, up), normal);
-  const room = c.roomOf(d.windows[0].cell, story);
+  const cell = d.windows[0].cell;
+  const room = cell ? c.roomOf(cell, story) : 0;
   const a = d.x - d.half;
   const b = d.x + d.half;
   const rim = 0.07;
   m.with({ group: r.group, room: 0, material: MAT.plain, color: [62, 64, 70] }, () =>
     pane(a - rim, b + rim, d.set - rim / len, d.reach + rim / len, 0.03),
   );
-  m.with({ group: r.group, room: 0, material: MAT.gloss, color: [36, 44, 56] }, () => pane(a, b, d.set, d.reach, 0.05));
+  // Dark and matte under the glass: a glossy pane would catch the sun all over at once.
+  m.with({ group: r.group, room: 0, material: MAT.plain, color: [30, 36, 46] }, () => pane(a, b, d.set, d.reach, 0.05));
   m.with({ group: r.group, room, blend: true, ...PAINT.white, material: MAT.glass }, () =>
     pane(a, b, d.set, d.reach, 0.07),
   );
@@ -338,7 +343,9 @@ function gable(c: Context, r: RoofSpan): number {
   const pitch = r.pitch;
   const cross = r.main ? c.roof.cross : null;
   const loft = r.main ? c.roof.loft : null;
-  const dormers = loft ? c.loftWindows.dormers : [];
+  // The dormers of the floor under the roof, or of an attic nobody lives in.
+  const dormers = r.main ? c.loftWindows.dormers : [];
+  const attic = c.loftWindows.attic;
   const half = (y1 - y0) / 2;
   const mid = (y0 + y1) / 2;
   const rise = half * pitch;
@@ -391,8 +398,9 @@ function gable(c: Context, r: RoofSpan): number {
       );
     };
     const side = n > 0 ? 'front' : 'back';
+    // An attic's dormers stand on the slope; a floor's look into it.
     const standing = dormers
-      .filter((d) => d.kind !== 'skylight' && d.side === side && d.x + d.half > a && d.x - d.half < b)
+      .filter((d) => !attic && d.kind !== 'skylight' && d.side === side && d.x + d.half > a && d.x - d.half < b)
       .sort((p, q) => p.x - q.x);
     let from = a;
     for (const d of standing) {
@@ -519,11 +527,11 @@ function gable(c: Context, r: RoofSpan): number {
     eaveTrim(c, cross.at + spread, xb, y1, front, low, 1, group);
   } else eaveTrim(c, xa, xb, y1, front, low, 1, group);
   eaveTrim(c, xa, xb, y0, y0 - eave, low, -1, group);
+  for (const d of dormers) {
+    if (d.kind !== 'skylight') dormer(c, r, d, loft);
+    else if (loft) skylight(c, r, d, loft, pitch);
+  }
   if (loft) {
-    for (const d of dormers) {
-      if (d.kind === 'skylight') skylight(c, r, d, loft, pitch);
-      else dormer(c, r, d, loft);
-    }
     // A gable to the front that no room has a window in still has its vent.
     if (cross && !c.loftWindows.walls.some((w) => w.side === 'front') && peak - top > 1.2) {
       const size = Math.min(0.2, (peak - top) * 0.1);
@@ -630,11 +638,13 @@ function hip(c: Context, r: RoofSpan): number {
   });
   eaveTrim(c, xa, xb, y1, y1 + eave, low, 1, group);
   eaveTrim(c, xa, xb, y0, y0 - eave, low, -1, group);
-  // A floor under a hipped roof is lit through the slopes, at the ends as well as front and back.
+  // A floor under a hipped roof is lit through the slopes, at the ends as well as front and back; an
+  // attic nobody lives in may have dormers standing on them.
   const loft = r.main ? c.roof.loft : null;
-  if (loft) {
+  if (r.main) {
     for (const d of c.loftWindows.dormers) {
-      skylight(c, r, d, loft, d.side === 'front' || d.side === 'back' ? pitch : endPitch);
+      if (d.kind !== 'skylight') dormer(c, r, d, loft);
+      else if (loft) skylight(c, r, d, loft, d.side === 'front' || d.side === 'back' ? pitch : endPitch);
     }
   }
   return ridge;
@@ -793,4 +803,66 @@ export function buildRoof(c: Context, r: RoofSpan): number {
     default:
       return gable(c, r);
   }
+}
+
+/**
+ * Where bulbs hang along the front of a roof, as at Christmas: lines just under the edge of its
+ * eaves, and up the edges of a gable that faces the front.
+ */
+export function frontEaves(c: Context, r: RoofSpan): Point[][] {
+  const style = c.style;
+  const eave = style.eave;
+  // A hip against a taller wall is built as a gable.
+  const form = style.roofForm === 'hip' && !(r.ends.left && r.ends.right) ? 'gable' : style.roofForm;
+  if (form === 'flat') {
+    // Along the coping of the parapet.
+    const z = r.top + 0.47;
+    return [
+      [
+        [r.x0 - 0.03, r.y1 + 0.05, z],
+        [r.x1 + 0.03, r.y1 + 0.05, z],
+      ],
+    ];
+  }
+  if (form === 'shed') {
+    const y = r.y1 + eave;
+    const z = r.top + 0.12 + (y - r.y0) * Math.max(0.06, r.pitch) - 0.04;
+    const xa = r.x0 - (r.ends.left ? eave * 0.7 : 0);
+    const xb = r.x1 + (r.ends.right ? eave * 0.7 : 0);
+    return [
+      [
+        [xa, y + 0.03, z],
+        [xb, y + 0.03, z],
+      ],
+    ];
+  }
+  const low = r.top - eave * r.pitch - FASCIA - 0.04;
+  const y = r.y1 + eave + 0.03;
+  const xa = r.x0 - (form === 'hip' ? eave : r.ends.left ? RAKE : 0);
+  const xb = r.x1 + (form === 'hip' ? eave : r.ends.right ? RAKE : 0);
+  const cross = r.main && form === 'gable' ? c.roof.cross : null;
+  if (!cross) {
+    return [
+      [
+        [xa, y, low],
+        [xb, y, low],
+      ],
+    ];
+  }
+  const spread = cross.half + (eave * r.pitch) / cross.pitch;
+  return [
+    [
+      [xa, y, low],
+      [cross.at - spread, y, low],
+    ],
+    [
+      [cross.at - spread, y, low],
+      [cross.at, y, cross.peak - FASCIA - 0.04],
+      [cross.at + spread, y, low],
+    ],
+    [
+      [cross.at + spread, y, low],
+      [xb, y, low],
+    ],
+  ];
 }

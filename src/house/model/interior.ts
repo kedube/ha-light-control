@@ -63,12 +63,16 @@ const STEPS = 12;
 /** Under a roof, furniture stands where the ceiling is at least this high. */
 const STAND = 1.05;
 
-/** Where the flight of stairs runs in a stairs cell: it climbs toward the back wall. */
+/**
+ * Where the flight of stairs runs in a stairs cell: it climbs toward the back wall, along the left
+ * side of the cell, no wider than a flight of stairs is.
+ */
 function flight(cell: PlanCell): Rect & { run: number } {
   const r = cell.rect;
   const run = Math.min(0.26, (r.y1 - r.y0 - EXT_T - 0.3) / STEPS);
   const y0 = r.y0 + EXT_T + 0.05;
-  return { x0: r.x0 + EXT_T + 0.1, x1: r.x1 - 0.12, y0, y1: y0 + run * STEPS, run };
+  const x0 = r.x0 + (r.x0 < 0.01 ? EXT_T + 0.1 : INT_T / 2 + 0.06);
+  return { x0, x1: Math.min(r.x1 - 0.12, x0 + 1.3), y0, y1: y0 + run * STEPS, run };
 }
 
 function stairs(c: Context, cell: PlanCell, story: PlanStory, up: boolean, room: number): void {

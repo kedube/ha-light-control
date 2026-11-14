@@ -7,14 +7,17 @@ import { boxSides, MeshBuilder, VERTEX_BYTES, wireOf, type Region } from '../../
 import { buildModel, type Model, type RoomInput } from '../../src/house/model.ts';
 import {
   chimneySpot,
+  facadeFor,
   loftStory,
   loftWindows,
   massingOf,
   roofAt,
   under,
   wingRoofAt,
+  type DormerChoice,
+  type TopFloor,
 } from '../../src/house/model/massing.ts';
-import { planHouse, span, type HousePlan, type PlanFloorInput } from '../../src/house/plan.ts';
+import { planHouse, span, type PlanFloorInput } from '../../src/house/plan.ts';
 import { isAtticFloor, type RoomType } from '../../src/room-types.ts';
 
 const rooms = (...types: RoomType[]) => types.map((type, i) => ({ id: `${type}${i}`, type }));
@@ -35,7 +38,12 @@ const styleOf = (name: StyleName): HouseStyle => STYLES[name];
 /** The designs with a roof that slopes, and so can have a floor under it. */
 const PITCHED = STYLE_NAMES.filter((name) => styleOf(name).loft);
 
-function model(plan: HousePlan, name: StyleName, topFloor?: 'auto' | 'roof' | 'full'): Model {
+/** A plan made for a design, as the card makes one: its rooms are fitted in behind the design's windows. */
+const designed = (floors: PlanFloorInput[], name: StyleName, topFloor: TopFloor = 'auto', dormers?: DormerChoice) =>
+  planHouse(floors, [], facadeFor(STYLES[name], topFloor, dormers));
+
+function model(floors: PlanFloorInput[], name: StyleName, topFloor?: TopFloor, dormers?: DormerChoice): Model {
+  const plan = designed(floors, name, topFloor, dormers);
   const inputs = new Map<string, RoomInput>();
   for (const story of plan.stories) {
     for (const cell of story.cells) {
@@ -48,7 +56,7 @@ function model(plan: HousePlan, name: StyleName, topFloor?: 'auto' | 'roof' | 'f
       });
     }
   }
-  return buildModel({ plan, rooms: inputs, outdoor: [], style: STYLES[name], topFloor });
+  return buildModel({ plan, rooms: inputs, outdoor: [], style: STYLES[name], topFloor, dormers });
 }
 
 /** Every vertex of a mesh in plan space, with what it is made of and what it belongs to. */
@@ -246,9 +254,14 @@ describe('the windows of a floor under the roof', () => {
   it('gives every room at the front a window: in a dormer, in the slope, or in a gable', () => {
     for (const name of PITCHED) {
       const style = styleOf(name);
-      for (const plan of [withAttic, threeStories, twoStories]) {
+      for (const floors of [
+        [GROUND, UP, ATTIC],
+        [GROUND, UP, THIRD],
+        [GROUND, UP],
+      ]) {
+        const plan = designed(floors, name, 'roof');
         const m = massingOf(plan, style, 'roof');
-        const loft = m.loft!;
+        const loft = plan.stories[m.loft!.index];
         const { dormers, walls } = loftWindows(plan, style, m);
         for (const cell of loft.cells) {
           if (!span(cell, plan, 'front') || !cell.id || cell.type === 'closet') continue;
@@ -264,9 +277,10 @@ describe('the windows of a floor under the roof', () => {
   it('stands dormers on the roof, clear of each other and of what else is there', () => {
     for (const name of PITCHED) {
       const style = styleOf(name);
-      const m = massingOf(withAttic, style);
-      const { dormers } = loftWindows(withAttic, style, m);
-      const half = withAttic.depth / 2;
+      const plan = designed([GROUND, UP, ATTIC], name);
+      const m = massingOf(plan, style);
+      const { dormers } = loftWindows(plan, style, m);
+      const half = plan.depth / 2;
       const chimney = chimneySpot(m);
       for (const d of dormers) {
         const alongX = d.side === 'front' || d.side === 'back';
@@ -286,7 +300,7 @@ describe('the windows of a floor under the roof', () => {
           assert.ok(d.sill > m.knee + d.set * m.pitch, `${name}: the sill clears the roof`);
         }
         for (const w of d.windows) {
-          const range = span(w.cell, withAttic, d.side)!;
+          const range = span(w.cell!, plan, d.side)!;
           assert.ok(w.x - w.half >= d.x - d.half - 1e-9 && w.x + w.half <= d.x + d.half + 1e-9);
           assert.ok(w.x - w.half > range[0] && w.x + w.half < range[1], `${name}: inside its room`);
         }
@@ -308,8 +322,9 @@ describe('the windows of a floor under the roof', () => {
   it('sets windows in the gable ends where the roof clears them', () => {
     for (const name of PITCHED) {
       const style = STYLES[name];
-      const m = massingOf(withAttic, style);
-      const { walls } = loftWindows(withAttic, style, m);
+      const plan = designed([GROUND, UP, ATTIC], name);
+      const m = massingOf(plan, style);
+      const { walls } = loftWindows(plan, style, m);
       const loft = m.loft!;
       if (m.form === 'gable')
         assert.ok(
@@ -318,16 +333,16 @@ describe('the windows of a floor under the roof', () => {
         );
       else assert.equal(walls.length, 0, `${name}: a hipped roof has no gable`);
       for (const w of walls) {
-        const range = span(w.cell, withAttic, w.side)!;
+        const range = span(w.cell!, plan, w.side)!;
         assert.ok(w.a > range[0] && w.b < range[1], `${name}: inside its room`);
         for (const u of [w.a, w.b]) {
-          const [x, y] = w.side === 'front' ? [u, withAttic.depth] : [w.side === 'right' ? withAttic.width : 0, u];
+          const [x, y] = w.side === 'front' ? [u, plan.depth] : [w.side === 'right' ? plan.width : 0, u];
           assert.ok(roofAt(m, x, y) - loft.z > w.z1 + 0.2, `${name}: the roof is above the ${w.side} window`);
         }
       }
       const pairs = walls.filter((w) => w.side === 'right');
       if (pairs.length === 2) {
-        const mid = withAttic.depth / 2;
+        const mid = plan.depth / 2;
         const [a, b] = pairs.map((w) => (w.a + w.b) / 2 - mid).sort((p, q) => p - q);
         assert.ok(Math.abs(a + b) < 0.6, `${name}: a pair either side of the ridge`);
       }
@@ -350,21 +365,21 @@ describe('the windows of a floor under the roof', () => {
 describe('the house with a floor under its roof', () => {
   it('shows as many floors as the home has', () => {
     // A Cape Cod with two floors and an attic: two stories of walls, and the attic behind the dormers.
-    const cape = model(withAttic, 'capecod');
+    const cape = model([GROUND, UP, ATTIC], 'capecod');
     assert.equal(cape.loft, 2);
     assert.equal(cape.plan.stories[cape.loft].id, 'attic');
-    const tall = model(withAttic, 'capecod', 'full');
+    const tall = model([GROUND, UP, ATTIC], 'capecod', 'full');
     assert.equal(tall.loft, -1);
     assert.ok(tall.top - cape.top > 2.5, 'a story lower than with the attic as a floor of its own');
-    assert.equal(model(twoStories, 'colonial').loft, -1);
-    assert.equal(model(twoStories, 'capecod').loft, 1);
-    assert.equal(model(oneStory, 'capecod').loft, -1);
+    assert.equal(model([GROUND, UP], 'colonial').loft, -1);
+    assert.equal(model([GROUND, UP], 'capecod').loft, 1);
+    assert.equal(model([GROUND], 'capecod').loft, -1);
   });
 
   it('keeps everything on that floor under the roof', () => {
     for (const name of PITCHED) {
-      const m = model(withAttic, name);
-      const massing = massingOf(withAttic, STYLES[name]);
+      const m = model([GROUND, UP, ATTIC], name);
+      const massing = massingOf(m.plan, STYLES[name]);
       const loft = m.loft;
       const own = new Set([m.groups.lower[loft], m.groups.upper[loft]]);
       let checked = 0;
@@ -378,18 +393,18 @@ describe('the house with a floor under its roof', () => {
       }
       assert.ok(checked > 500, `${name}: the floor has walls and furniture`);
       for (const f of m.fixtures) {
-        if (!withAttic.stories[loft].cells.some((c) => c.id === f.roomId)) continue;
+        if (!m.plan.stories[loft].cells.some((c) => c.id === f.roomId)) continue;
         assert.ok(f.at[2] < roofAt(massing, f.at[0], f.at[1]) - 0.15, `${name}: ${f.lightId} hangs under the ceiling`);
-        assert.ok(f.at[2] > withAttic.stories[loft].z, `${name}: ${f.lightId} is above the floor`);
+        assert.ok(f.at[2] > m.plan.stories[loft].z, `${name}: ${f.lightId} is above the floor`);
       }
     }
   });
 
   it('lets its rooms be seen and picked: through the dormers, on the roof, and with the floor opened', () => {
     for (const name of PITCHED) {
-      const m = model(withAttic, name);
-      const massing = massingOf(withAttic, STYLES[name]);
-      const story = withAttic.stories[m.loft];
+      const m = model([GROUND, UP, ATTIC], name);
+      const massing = massingOf(m.plan, STYLES[name]);
+      const story = m.plan.stories[m.loft];
       const ids = story.cells.map((c) => c.id).filter((id): id is string => Boolean(id));
       const glass = vertices(m).filter((v) => v.material === MAT.glass && v.group === m.groups.roof);
       for (const id of ids) {
@@ -413,7 +428,7 @@ describe('the house with a floor under its roof', () => {
         if (
           span(
             story.cells.find((c) => c.id === id)!,
-            withAttic,
+            m.plan,
             'front',
           )
         ) {
@@ -423,10 +438,12 @@ describe('the house with a floor under its roof', () => {
           );
         }
       }
-      // The glass in the roof is lit by the rooms behind it.
+      // The glass in the roof is lit by the rooms behind it. A roof whose gable to the front leaves
+      // no room for dormers has none: its rooms look out of the gables.
       const lit = new Set(glass.map((v) => v.room));
+      const { dormers } = loftWindows(m.plan, STYLES[name], massing);
       assert.ok(
-        ids.some((id) => lit.has(m.rooms.find((r) => r.id === id)!.index)),
+        !dormers.length || ids.some((id) => lit.has(m.rooms.find((r) => r.id === id)!.index)),
         `${name}: a window in the roof shows a room`,
       );
     }
@@ -434,7 +451,7 @@ describe('the house with a floor under its roof', () => {
 
   it('leaves a roof nobody lives under without windows', () => {
     for (const name of PITCHED) {
-      const m = model(twoStories, name, 'full');
+      const m = model([GROUND, UP], name, 'full');
       assert.equal(m.loft, -1);
       const glass = vertices(m).filter((v) => v.material === MAT.glass && v.group === m.groups.roof);
       assert.equal(glass.length, 0, `${name}: no glass in the roof`);
@@ -443,9 +460,9 @@ describe('the house with a floor under its roof', () => {
 
   it('builds every design with every kind of top floor', () => {
     for (const name of STYLE_NAMES) {
-      for (const plan of [oneStory, twoStories, withCellar, withAttic, threeStories]) {
+      for (const floors of [[GROUND], [GROUND, UP], [CELLAR, GROUND, UP], [GROUND, UP, ATTIC], [GROUND, UP, THIRD]]) {
         for (const choice of ['auto', 'roof', 'full'] as const) {
-          const m = model(plan, name, choice);
+          const m = model(floors, name, choice);
           assert.ok(m.mesh.vertexCount > 1000 && Number.isFinite(m.radius) && Number.isFinite(m.top));
           const f32 = new Float32Array(m.mesh.vertices);
           for (let i = 0; i < m.mesh.vertexCount; i++) {

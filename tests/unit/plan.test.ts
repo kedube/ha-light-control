@@ -1,16 +1,22 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { STYLE_NAMES, STYLES } from '../../src/house/materials.ts';
+import { facadeFor } from '../../src/house/model/massing.ts';
 import {
+  bayMiddles,
   facadesOf,
   floorLevels,
+  frontDoor,
   GROUND_ID,
   groundLevel,
   planHouse,
   sortFloors,
-  STAIRS_WIDTH,
+  span,
+  stairsBay,
   type HousePlan,
   type PlanFloorInput,
   type PlanRoomInput,
+  type Side,
 } from '../../src/house/plan.ts';
 import type { RoomType } from '../../src/room-types.ts';
 
@@ -103,12 +109,14 @@ describe('planHouse', () => {
     }
   });
 
-  it('puts the stairs in the same place on every floor, and none in a bungalow', () => {
+  it('puts the stairs in the same place on every floor, behind the front door, and none in a bungalow', () => {
     const plan = planHouse(demo);
+    const [x0, x1] = stairsBay(plan);
+    assert.ok(Math.abs((x0 + x1) / 2 - plan.width / 2) < 1e-6, 'in the middle bay');
     for (const story of plan.stories) {
       const stairs = story.cells.find((c) => c.type === 'stairs');
       assert.ok(stairs, `${story.id} has stairs`);
-      assert.deepEqual([stairs.rect.x0, stairs.rect.y0, stairs.rect.x1], [0, 0, STAIRS_WIDTH]);
+      assert.deepEqual([stairs.rect.x0, stairs.rect.y0, stairs.rect.x1], [x0, 0, x1]);
     }
     const bungalow = planHouse([], rooms('living', 'kitchen', 'bedroom', 'bathroom'));
     assert.ok(!bungalow.stories[0].cells.some((c) => c.type === 'stairs'));
@@ -227,6 +235,77 @@ describe('planHouse', () => {
       ]),
       ['b', 'a'],
     );
+  });
+
+  it('divides the walls into bays: an odd number across the front, so the door has the middle one', () => {
+    const plans = [
+      planHouse(demo),
+      planHouse([], rooms('living')),
+      planHouse([], rooms('living', 'kitchen', 'bedroom')),
+    ];
+    for (const name of STYLE_NAMES) plans.push(planHouse(demo, [], facadeFor(STYLES[name])));
+    for (const plan of plans) {
+      assert.equal(plan.bays.front % 2, 1);
+      assert.ok(plan.bays.front >= 3 && plan.bays.side >= 1);
+      for (const side of ['front', 'right'] as Side[]) {
+        const middles = bayMiddles(plan, side);
+        const bay = (side === 'front' ? plan.width : plan.depth) / middles.length;
+        assert.ok(bay >= 1.8 && bay <= 3.3, `${side}: bays ${bay.toFixed(2)} m wide`);
+        // Symmetrical about the middle of the wall.
+        middles.forEach((u, i) =>
+          assert.ok(Math.abs(u + middles[middles.length - 1 - i] - middles.length * bay) < 1e-2),
+        );
+      }
+    }
+    // Wide windows want wide bays.
+    assert.ok(planHouse(demo, [], facadeFor(STYLES.midcentury)).bays.front < planHouse(demo).bays.front);
+  });
+
+  it('puts the front door in the middle, into the hall, or the living room without one', () => {
+    const plan = planHouse(demo);
+    const door = frontDoor(plan)!;
+    assert.equal(door.x, plan.width / 2);
+    assert.equal(door.cell.id, 'hallway3');
+    assert.ok(door.cell.rect.x0 < door.x - 0.5 && door.cell.rect.x1 > door.x + 0.5, 'the door opens into the hall');
+    const open = planHouse([
+      { id: 'g', level: 0, rooms: rooms('kitchen', 'living', 'dining', 'bathroom') },
+      { id: 'u', level: 1, rooms: rooms('bedroom') },
+    ]);
+    assert.equal(frontDoor(open)!.cell.id, 'living1');
+    assert.equal(
+      frontDoor(planHouse([], rooms('bedroom', 'office')))!.x,
+      planHouse([], rooms('bedroom', 'office')).width / 2,
+    );
+  });
+
+  it('fits the rooms in behind the windows: a wall between two rooms meets the front or the side between bays', () => {
+    const homes: PlanFloorInput[][] = [
+      demo,
+      [{ id: 'g', level: 0, rooms: rooms('living', 'kitchen', 'bedroom', 'bathroom', 'office') }],
+      [{ id: 'g', level: 0, rooms: rooms('kitchen', 'dining', 'living', 'laundry', 'office', 'guest') }],
+    ];
+    for (const floors of homes) {
+      for (const name of STYLE_NAMES) {
+        // Every floor with walls of its own: under a roof the windows are the roof's.
+        const plan = planHouse(floors, [], facadeFor(STYLES[name], 'full'));
+        assertTiled(plan);
+        for (const story of plan.stories) {
+          for (const side of ['front', 'right'] as Side[]) {
+            const length = side === 'front' ? plan.width : plan.depth;
+            const count = side === 'front' ? plan.bays.front : plan.bays.side;
+            for (const cell of story.cells) {
+              for (const end of span(cell, plan, side) ?? []) {
+                const k = (end / length) * count;
+                assert.ok(
+                  Math.abs(k - Math.round(k)) < 1e-3,
+                  `${name}, ${story.id}: ${cell.id ?? cell.type} ends at ${end} along the ${side}`,
+                );
+              }
+            }
+          }
+        }
+      }
+    }
   });
 
   it('copes with no rooms at all', () => {

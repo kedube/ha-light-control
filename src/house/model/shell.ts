@@ -3,8 +3,8 @@
 
 import { MAT, PAINT } from '../materials.ts';
 import { SKIP } from '../mesh.ts';
-import { frontDoor, span, type PlanStory, type Side } from '../plan.ts';
-import { Context, CUT_H, EXT_T, SILL_H, SLAB, WALL_H, type Point } from './context.ts';
+import { backDoor, bayMiddles, frontDoor, span, type PlanCell, type PlanStory, type Side } from '../plan.ts';
+import { Context, CUT_H, EXT_T, INT_T, SILL_H, SLAB, WALL_H, type Point } from './context.ts';
 import { under, WING_FLOOR, wingHeight, wingRoofAt } from './massing.ts';
 import { buildRoof, chimney, type RoofSpan } from './roof.ts';
 import {
@@ -15,7 +15,9 @@ import {
   SIDE,
   unit,
   wallRun,
+  shutterRoom,
   windowsAlong,
+  windowShape,
   windowUnit,
   type Frame,
   type Opening,
@@ -33,6 +35,47 @@ export interface Glazing {
 const SIDES: Side[] = ['front', 'right', 'back', 'left'];
 const PLAIN = { shutters: null, arched: false, box: false };
 
+/** How far a window's casing keeps from the end of its room's wall, so a wall between rooms never meets it. */
+const CLEAR = 0.09 + INT_T / 2;
+
+/**
+ * The openings of a story along one side of the house: a window in the middle of every bay, all of
+ * one size, the front door in the middle bay of the ground floor and the back door in a bay of a
+ * room at the back. A window whose bay a wall
+ * between two rooms crosses is left out, as is one into a closet.
+ */
+function bayOpenings(
+  c: Context,
+  story: PlanStory,
+  side: Side,
+  basement: [number, number] | null,
+): { cell: PlanCell; opening: Opening }[] {
+  const plan = c.plan;
+  const middles = bayMiddles(plan, side);
+  const bay = (side === 'front' || side === 'back' ? plan.width : plan.depth) / middles.length;
+  const size = basement
+    ? { w: Math.min(0.8, bay - 0.7), z0: basement[0], z1: basement[1] }
+    : windowShape(c.style.window, bay, Boolean(c.style.shutters));
+  const door = story.ground ? (side === 'front' ? frontDoor(plan) : side === 'back' ? backDoor(plan) : null) : null;
+  const out: { cell: PlanCell; opening: Opening }[] = [];
+  for (const u of middles) {
+    if (door && Math.abs(u - door.x) < 1e-3) {
+      out.push({ cell: door.cell, opening: { a: door.x - 0.5, b: door.x + 0.5, z0: 0, z1: 2.12, kind: 'door' } });
+      continue;
+    }
+    if (size.w < 0.45) continue;
+    const a = u - size.w / 2;
+    const b = u + size.w / 2;
+    const cell = story.cells.find((cell) => {
+      const range = span(cell, plan, side);
+      return range !== null && a >= range[0] + CLEAR - 1e-6 && b <= range[1] - CLEAR + 1e-6;
+    });
+    if (!cell || cell.type === 'closet') continue;
+    out.push({ cell, opening: { a, b, z0: size.z0, z1: size.z1, kind: 'window' } });
+  }
+  return out;
+}
+
 /**
  * The outside walls of one story of the main house. A floor under the roof has walls too: low ones
  * under the eaves, and gable ends that the roof cuts to shape, with windows where it is high enough.
@@ -45,6 +88,7 @@ function storyWalls(c: Context, story: PlanStory, glazing: Glazing[]): void {
   const groups = { lower: c.groups.lower[story.index], upper: c.groups.upper[story.index] };
   const door = story.ground ? frontDoor(plan) : null;
   const wing = story.ground ? plan.wing : null;
+  const frontBay = plan.width / plan.bays.front;
   const above = !story.basement && !story.ground && story.z > plan.base;
   const cladding = story.basement ? style.foundation : above ? (style.upper ?? style.wall) : style.wall;
   // A basement's windows sit at the top of its walls, above the grass.
@@ -58,6 +102,8 @@ function storyWalls(c: Context, story: PlanStory, glazing: Glazing[]): void {
       const f = frameOf(plan, side);
       // A gable end is clad as gables are, from the floor under the roof up.
       const face = loft && roof.form === 'gable' && (side === 'left' || side === 'right') ? style.gable : cladding;
+      // Under the roof the windows are its own; elsewhere there is one in every bay.
+      const bays = loft || !windows ? [] : bayOpenings(c, story, side, basement);
       // The slab's edge.
       c.mesh.with({ group: groups.lower, room: 0, ...face }, () =>
         c.mesh.quad(
@@ -105,20 +151,13 @@ function storyWalls(c: Context, story: PlanStory, glazing: Glazing[]): void {
           } else if (loft) {
             // Windows in a gable end, where the roof clears them. The eaves have dormers instead.
             for (const w of c.loftWindows.walls) {
-              if (w.side === side && w.cell === cell && side !== 'front') {
+              if (w.side === side && w.cell === cell && side !== 'front' && w.a >= part.a && w.b <= part.b) {
                 openings.push({ a: w.a, b: w.b, z0: w.z0, z1: w.z1, kind: 'window' });
               }
             }
           } else {
-            const avoid: [number, number][] = [];
-            if (door && side === 'front' && door.x > part.a && door.x < part.b) {
-              openings.push({ a: door.x - 0.5, b: door.x + 0.5, z0: 0, z1: 2.12, kind: 'door' });
-              avoid.push([door.x - 0.62, door.x + 0.62]);
-            }
-            if (windows) {
-              openings.push(
-                ...windowsAlong(part.a + EXT_T + 0.1, part.b - EXT_T - 0.1, cell.type, style.window, avoid, basement),
-              );
+            for (const { cell: owner, opening } of bays) {
+              if (owner === cell && opening.a >= part.a - 1e-6 && opening.b <= part.b + 1e-6) openings.push(opening);
             }
             // An upper window that the garage's roof would stand in front of is left out.
             if (side === 'left' && plan.wing && !story.ground && !story.basement) {
@@ -149,6 +188,8 @@ function storyWalls(c: Context, story: PlanStory, glazing: Glazing[]): void {
             shutters: front ? style.shutters : null,
             arched: Boolean(style.window.arched) && story.ground && (side === 'front' || side === 'right'),
             box: Boolean(style.window.boxes) && front,
+            // A window's shutters stay clear of the next window's.
+            shutterMax: shutterRoom(frontBay, windowShape(style.window, frontBay, Boolean(style.shutters)).w),
           };
           c.mesh.with({ side: SIDE[side] }, () => {
             for (const o of openings) unit(c, f, o, story.z, room, groups.upper, dress);
@@ -158,7 +199,7 @@ function storyWalls(c: Context, story: PlanStory, glazing: Glazing[]): void {
             // The gable itself, standing on the low wall, with its window.
             const base = story.z + roof.knee;
             const high: Opening[] = c.loftWindows.walls
-              .filter((w) => w.side === 'front' && w.cell === cell)
+              .filter((w) => w.side === 'front' && w.cell === cell && w.a >= part.a && w.b <= part.b)
               .map((w) => ({ a: w.a, b: w.b, z0: w.z0 - roof.knee, z1: w.z1 - roof.knee, kind: 'window' }));
             wallRun(
               c,
@@ -213,8 +254,8 @@ function storyWalls(c: Context, story: PlanStory, glazing: Glazing[]): void {
     const f = frameOf(plan, dormer.side);
     const glass = dormer.kind === 'skylight';
     for (const w of dormer.windows) {
-      const key = `${dormer.side}:${w.cell.id}`;
-      if (!w.cell.id || seen.has(key)) continue;
+      const key = `${dormer.side}:${w.cell?.id}`;
+      if (!w.cell?.id || seen.has(key)) continue;
       seen.add(key);
       // Just above a skylight, or just in front of a dormer's face.
       const inward = glass ? (dormer.set + dormer.reach) / 2 : dormer.set - 0.7;

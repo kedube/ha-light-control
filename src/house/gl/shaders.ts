@@ -528,13 +528,16 @@ void main() {
   float open = room.z;   // how much daylight reaches this room: 1 outdoors or with the roof off
 
   if (uGlassPass > 0.5) {
-    // Window glass: mostly a mirror for the sky, tipped up so it shows sky rather than lawn.
+    // Window glass: mostly a mirror for the sky, tipped up so it shows sky rather than lawn. Glass
+    // lying in a roof already faces the sky, and shows the deeper blue above, not the bright horizon.
+    float roofed = smoothstep(0.35, 0.6, N.y);
     vec3 R = reflect(-V, N);
-    R = normalize(vec3(R.x, abs(R.y) * 0.55 + 0.1, R.z));
+    R = normalize(vec3(R.x, mix(abs(R.y) * 0.55 + 0.1, abs(R.y), roofed), R.z));
     float fresnel = 0.05 + 0.95 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
     float mirror = clamp(fresnel * 1.5 + 0.2, 0.0, 0.9);
     vec3 H = normalize(uKeyDir + V);
-    float glint = pow(max(dot(N, H), 0.0), 900.0) * 30.0 * keyShadow();
+    // A flat pane in a roof would flash all over at once, and read as a lamp: its glint is softer.
+    float glint = pow(max(dot(N, H), 0.0), 900.0) * mix(30.0, 2.5, roofed) * keyShadow();
     vec3 c = skyAbove(R) * mirror + uKeyColor * glint;
     // A lit room shows as a warm veil on its windows, even by day.
     c += bounce * 1.1;
@@ -618,6 +621,8 @@ void main() {
     vec3 glow = texelFetch(uLights, ivec2(vEmit, 3), 0).rgb;
     if (vMat == ${M.lamp}) c += glow * (0.55 + 0.45 * ndv);
     else if (vMat == ${M.strip}) c += glow * 2.2;
+    // Colored bulbs keep their own colors, as bright as the light they are on.
+    else if (vMat == ${M.bulbs}) c += s.albedo * dot(glow, vec3(0.3, 0.55, 0.15)) * 3.0;
     else c += glow;
   }
   if (vMat == ${M.screen}) {

@@ -360,6 +360,7 @@ export class LightControlCard extends LitElement {
         .sun=${sun}
         .styleName=${this.houseStyle()}
         .topFloor=${config.house_top_floor}
+        .dormers=${config.house_dormers}
         .colors=${this.houseColors()}
         .facing=${this.houseFacing()}
         .clouds=${this.cloudCover()}

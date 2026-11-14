@@ -3,13 +3,13 @@
 // fixture for each of its lights.
 
 import type { RGB } from '../../color.ts';
-import { fixtureKind } from '../fixtures.ts';
 import { seeded } from '../math.ts';
 import { PAINT, tint, type GardenKind, type HouseStyle } from '../materials.ts';
 import { SKIP, type Paint } from '../mesh.ts';
 import type { HousePlan, Rect } from '../plan.ts';
-import { box, Context, SLAB, type Box, type Point, type RoomInput } from './context.ts';
+import { box, Context, SLAB, type Box, type RoomInput } from './context.ts';
 import { planEntry, type Entry } from './entry.ts';
+import { lightOutdoors } from './outdoor.ts';
 
 export type ZoneKind = 'porch' | 'garden' | 'yard' | 'driveway' | 'pool' | 'patio' | 'lawn';
 
@@ -27,6 +27,11 @@ export interface Site {
   zones: Zone[];
   /** How far the plot reaches in front of the house. */
   front: number;
+  /** The path from the front steps to the pavement, and the driveway, where there are. */
+  walk: Rect | null;
+  drive: Rect | null;
+  /** Where the fence along the road stands (y). */
+  fence: number;
 }
 
 type TreeKind = 'oak' | 'fir' | 'cypress' | 'olive' | 'maple';
@@ -253,7 +258,25 @@ export function layoutSite(plan: HousePlan, outdoor: RoomInput[], style: HouseSt
   });
   const basement = [...plan.stories].reverse().find((s) => s.basement);
   const bottom = basement ? Math.min(...plan.stories.map((s) => s.z)) - SLAB - 0.7 : -1.1;
-  return { box: box(left, back, bottom, W + right, D + front, 0), entry, zones, front };
+  const pavement = D + front - 1.5;
+  const walkway = entry
+    ? { x0: entry.door - 0.6, y0: entry.deck.y1 + entry.steps, x1: entry.door + 0.6, y1: pavement }
+    : null;
+  const driveway = zones.find((z) => z.kind === 'driveway');
+  const drive = driveway
+    ? driveway.rect
+    : wing
+      ? { x0: wing.rect.x0 + 0.35, y0: wing.rect.y1, x1: wing.rect.x1 - 0.35, y1: pavement }
+      : null;
+  return {
+    box: box(left, back, bottom, W + right, D + front, 0),
+    entry,
+    zones,
+    front,
+    walk: walkway,
+    drive,
+    fence: D + front - 1.75,
+  };
 }
 
 // ─── Plants ──────────────────────────────────────────────────────────────────
@@ -427,87 +450,6 @@ function fence(
   }
 }
 
-// ─── Lights ──────────────────────────────────────────────────────────────────
-
-/** A light outside: a lantern on a post, a low path light, or a lantern on the wall. */
-function outdoorLight(
-  c: Context,
-  room: RoomInput,
-  light: { id: string; name: string },
-  x: number,
-  y: number,
-  mount: 'post' | 'bollard' | 'wall',
-  group: number,
-  ground = 0,
-): void {
-  const m = c.mesh;
-  const slot = c.slot();
-  if (!slot) return;
-  const h = ground + (mount === 'post' ? 2.2 : mount === 'bollard' ? 0.7 : 1.95);
-  if (mount !== 'wall') {
-    m.with({ group, room: 0, ...PAINT.lampPost }, () => {
-      m.cylinder(x, y, ground, ground + 0.06, 0.1, 0.07, 10);
-      m.cylinder(x, y, ground + 0.06, h - 0.3, 0.035, 0.03, 8, 0);
-    });
-  } else {
-    m.with({ group, room: 0, ...PAINT.lampPost }, () =>
-      m.box(x - 0.05, y - 0.14, h - 0.2, x + 0.05, y - 0.02, h + 0.02),
-    );
-  }
-  // The lantern: a glowing box under a little roof.
-  const w = mount === 'bollard' ? 0.07 : 0.11;
-  m.with({ group, room: 0, emit: slot, ...PAINT.shade }, () => m.box(x - w, y - w, h - 0.3, x + w, y + w, h - 0.04));
-  m.with({ group, room: 0, ...PAINT.lampPost }, () => {
-    m.box(x - w - 0.04, y - w - 0.04, h - 0.04, x + w + 0.04, y + w + 0.04, h);
-    m.box(x - w - 0.015, y - w - 0.015, h - 0.33, x + w + 0.015, y + w + 0.015, h - 0.3);
-    m.cylinder(x, y, h, h + 0.1, w * 0.9, 0.01, 4, 0);
-  });
-  c.fixtures.push({
-    slot,
-    roomId: room.id,
-    lightId: light.id,
-    kind: mount === 'bollard' ? 'lamp' : 'ceiling',
-    outdoor: true,
-    at: [x, y, h - 0.17],
-    reach: mount === 'post' ? 7 : mount === 'bollard' ? 3.6 : 5.5,
-  });
-}
-
-/** Bulbs on a wire between two poles, sagging in the middle. */
-function stringLights(c: Context, room: RoomInput, light: { id: string }, a: Point, b: Point, group: number): void {
-  const m = c.mesh;
-  const slot = c.slot();
-  if (!slot) return;
-  m.with({ group, room: 0, ...PAINT.lampPost }, () => {
-    m.cylinder(a[0], a[1], 0, a[2], 0.03, 0.025, 6, 2);
-    m.cylinder(b[0], b[1], 0, b[2], 0.03, 0.025, 6, 2);
-  });
-  const bulbs = Math.max(5, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.55));
-  let last: Point = a;
-  for (let i = 1; i <= bulbs; i++) {
-    const t = i / (bulbs + 1);
-    const sag = 0.45 * 4 * t * (1 - t);
-    const p: Point = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t - sag];
-    m.with({ group, room: 0, ...PAINT.iron }, () =>
-      m.quad(last, p, [p[0], p[1], p[2] - 0.012], [last[0], last[1], last[2] - 0.012], [b[1] - a[1], a[0] - b[0], 0]),
-    );
-    m.with({ group, room: 0, emit: slot, ...PAINT.bulb }, () =>
-      m.blob(p[0], p[1], p[2] - 0.06, 0.05, 0.05, 0.06, seeded(i), 0, 0),
-    );
-    last = p;
-  }
-  c.fixtures.push({
-    slot,
-    roomId: room.id,
-    lightId: light.id,
-    kind: 'strip',
-    outdoor: true,
-    at: [a[0], a[1], (a[2] + b[2]) / 2 - 0.5],
-    along: [b[0] - a[0], b[1] - a[1], 0],
-    reach: 5,
-  });
-}
-
 // ─── The ground ──────────────────────────────────────────────────────────────
 
 /** The block of earth: its sides show the soil, and the front of it lifts away to reveal a basement. */
@@ -653,9 +595,8 @@ function planting(c: Context, s: Site, g: Garden): void {
   if (entry) gaps.push([entry.door - 0.85, entry.door + 0.85]);
   if (wing) gaps.push([wing.rect.x0 + 0.1, wing.rect.x1 - 0.1]);
   for (const zone of s.zones) if (zone.kind === 'driveway') gaps.push([zone.rect.x0 - 0.25, zone.rect.x1 + 0.25]);
-  const fenceY = y1 - 1.75;
-  fence(c, g.fence, x0 + 0.35, 0, fenceY, gaps, back);
-  fence(c, g.fence, 0, x1 - 0.35, fenceY, gaps, ground);
+  fence(c, g.fence, x0 + 0.35, 0, s.fence, gaps, back);
+  fence(c, g.fence, 0, x1 - 0.35, s.fence, gaps, ground);
   // A mailbox where the path meets the road.
   if (entry) {
     const mx = entry.door + 1.05;
@@ -680,32 +621,24 @@ function paths(c: Context, s: Site, g: Garden): void {
   // The pavement along the front of the plot, in two parts so the left one stays with the earth.
   slab(c, { x0, y0: y1 - 1.5, x1: 0, y1: y1 - 0.12 }, PAINT.concrete, c.groups.base, 0.05);
   slab(c, { x0: 0, y0: y1 - 1.5, x1, y1: y1 - 0.12 }, PAINT.concrete, ground, 0.05);
-  const entry = s.entry;
-  if (entry) {
-    const from = entry.deck.y1 + entry.steps;
+  const walk = s.walk;
+  if (walk) {
     if (g.pads) {
       // Separate slabs, with the lawn between them.
-      for (let y = from + 0.15; y < y1 - 1.5 - 0.5; y += 1.0) {
+      for (let y = walk.y0 + 0.15; y < walk.y1 - 0.5; y += 1.0) {
         slab(
           c,
-          { x0: entry.door - 0.62, y0: y, x1: entry.door + 0.62, y1: Math.min(y + 0.78, y1 - 1.55) },
+          { x0: walk.x0 - 0.02, y0: y, x1: walk.x1 + 0.02, y1: Math.min(y + 0.78, y1 - 1.55) },
           g.walk,
           ground,
           0.035,
         );
       }
-    } else slab(c, { x0: entry.door - 0.6, y0: from, x1: entry.door + 0.6, y1: y1 - 1.5 }, g.walk, ground);
+    } else slab(c, walk, g.walk, ground);
   }
-  const wing = plan.wing;
-  if (wing && !s.zones.some((z) => z.kind === 'driveway')) {
-    slab(
-      c,
-      { x0: wing.rect.x0 + 0.35, y0: wing.rect.y1, x1: wing.rect.x1 - 0.35, y1: y1 - 1.5 },
-      g.drive,
-      c.groups.base,
-      0.035,
-    );
-  }
+  // The driveway to the garage; one that is an outdoor area is drawn with it.
+  if (s.drive && plan.wing && !s.zones.some((z) => z.kind === 'driveway'))
+    slab(c, s.drive, g.drive, c.groups.base, 0.035);
 }
 
 /** Draws the outdoor areas. Returns a volume for each, so it can be picked and outlined. */
@@ -714,24 +647,13 @@ function drawZones(c: Context, s: Site, g: Garden): Map<string, Box> {
   const m = c.mesh;
   const ground = c.groups.ground;
   const rand = seeded(977);
-  const story = c.ground;
   for (const zone of s.zones) {
     const room = c.input.outdoor.find((r) => r.id === zone.roomId);
     if (!room) continue;
     const r = zone.rect;
     const tall = zone.kind === 'porch' ? c.plan.base + 2.4 : 1.4;
     volumes.set(zone.roomId, box(r.x0, r.y0, 0, r.x1, r.y1, tall));
-    if (zone.kind === 'porch') {
-      // Lanterns on the wall beside the door, then along the front of the house.
-      const door = s.entry?.door ?? (r.x0 + r.x1) / 2;
-      const upper = story ? c.groups.upper[story.index] : ground;
-      room.lights.forEach((light, i) => {
-        const offsets = [0.82, -0.82, 1.9, -1.9, 2.6, -2.6];
-        const x = Math.max(0.3, Math.min(c.plan.width - 0.3, door + (offsets[i] ?? 0.82 + i * 0.3)));
-        outdoorLight(c, room, light, x, c.plan.depth + 0.16, 'wall', upper, c.plan.base);
-      });
-      continue;
-    }
+    if (zone.kind === 'porch') continue;
     const cx = (r.x0 + r.x1) / 2;
     const cy = (r.y0 + r.y1) / 2;
     if (zone.kind === 'driveway') slab(c, r, g.drive, c.plan.wing ? c.groups.base : ground, 0.035);
@@ -818,31 +740,6 @@ function drawZones(c: Context, s: Site, g: Garden): Map<string, Box> {
       }
       shrub(c, r.x1 - 0.6, r.y1 - 0.5, 0.9, rand, ground, PAINT.hedge);
     }
-    // Lights along the edge of the area that faces the viewer; strings of bulbs across it.
-    const n = room.lights.length;
-    let strings = 0;
-    room.lights.forEach((light, i) => {
-      const t = (i + 1) / (n + 1);
-      const along = zone.kind === 'garden' || zone.kind === 'pool';
-      const x = along ? r.x0 + 0.35 : r.x0 + (r.x1 - r.x0) * t;
-      const y = along ? r.y0 + (r.y1 - r.y0) * t : r.y1 - 0.35;
-      if (fixtureKind(light.name) === 'strip' && r.x1 - r.x0 > 2 && r.y1 - r.y0 > 2) {
-        const k = strings++ * 0.9;
-        stringLights(c, room, light, [r.x0 + 0.5, r.y0 + 0.5 + k, 2.5], [r.x1 - 0.5, r.y1 - 0.5 - k, 2.5], ground);
-        return;
-      }
-      const low =
-        zone.kind === 'driveway' || /path|weg|pad|chemin|sendero|vialetto|ścież|caminho|step|bollard/i.test(light.name);
-      outdoorLight(
-        c,
-        room,
-        light,
-        x,
-        y,
-        low ? 'bollard' : 'post',
-        zone.kind === 'driveway' && c.plan.wing ? c.groups.base : ground,
-      );
-    });
   }
   return volumes;
 }
@@ -855,5 +752,7 @@ export function buildSite(c: Context, s: Site): Map<string, Box> {
     paths(c, s, g);
     planting(c, s, g);
   }
-  return drawZones(c, s, g);
+  const volumes = drawZones(c, s, g);
+  lightOutdoors(c, s);
+  return volumes;
 }

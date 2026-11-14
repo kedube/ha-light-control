@@ -110,6 +110,12 @@ export const nl: Translation = {
   opt_top_floor_full: 'Een volledige verdieping',
   help_house_top_floor:
     'Onder het dak heeft de bovenste verdieping schuine plafonds en dakkapellen. Beslist de bouwstijl, dan komt een verdieping met de naam Zolder daar altijd.',
+  cfg_house_dormers: 'Dakkapellen',
+  opt_dormers_auto: 'Zoals bij de bouwstijl hoort',
+  opt_dormers_on: 'Aan',
+  opt_dormers_off: 'Uit',
+  help_house_dormers:
+    'Aan zet dakkapellen op elk dak dat steil genoeg is, ook boven een onbewoonde zolder. Uit laat ze weg; de kamers onder het dak krijgen dan dakramen.',
   cfg_house_facing: 'De voorkant van het huis kijkt naar het',
   opt_facing_auto: 'De zon',
   opt_facing_n: 'Noorden',

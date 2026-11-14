@@ -7,6 +7,7 @@ export type IconStyle = 'auto' | 'graphic' | 'entity';
 export type HouseStyleOption = 'auto' | StyleName;
 export type HouseFacing = 'auto' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
 export type HouseTopFloor = 'auto' | 'roof' | 'full';
+export type HouseDormers = 'auto' | 'on' | 'off';
 /** A color in the YAML: '#rrggbb', '#rgb' or [r, g, b]. */
 export type ColorValue = string | number[];
 
@@ -24,6 +25,12 @@ export interface LightControlCardConfig {
    * story with the roof above it. 'auto' follows the design, and puts an attic under the roof.
    */
   house_top_floor?: HouseTopFloor;
+  /**
+   * Whether the roof has dormers. 'auto' follows the design: dormers light a floor under the roof.
+   * 'on' puts them on any roof steep enough, an attic nobody lives in too; 'off' leaves them out,
+   * and lights the rooms under the roof through glass in the slope instead.
+   */
+  house_dormers?: HouseDormers;
   /** Colors for the house, as '#rrggbb' or [r, g, b]; each defaults to the style's own. */
   house_color?: ColorValue;
   roof_color?: ColorValue;
@@ -76,6 +83,7 @@ export const DEFAULTS: Omit<ResolvedConfig, 'type'> = {
   show_house: true,
   house_style: 'auto',
   house_top_floor: 'auto',
+  house_dormers: 'auto',
   house_facing: 'auto',
   sky_weather: true,
   animate_sky: true,
@@ -106,6 +114,7 @@ const ENUMS: Record<string, readonly string[]> = {
   icon_style: ['auto', 'graphic', 'entity'],
   house_style: ['auto', ...STYLE_NAMES],
   house_top_floor: ['auto', 'roof', 'full'],
+  house_dormers: ['auto', 'on', 'off'],
   house_facing: ['auto', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'],
 };
 

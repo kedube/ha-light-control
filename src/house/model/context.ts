@@ -5,8 +5,8 @@ import type { RoomType } from '../../room-types.ts';
 import type { FixtureKind } from '../fixtures.ts';
 import type { HouseStyle } from '../materials.ts';
 import { MeshBuilder } from '../mesh.ts';
-import type { HousePlan, PlanCell, PlanStory } from '../plan.ts';
-import { loftWindows, massingOf, type LoftWindows, type Massing, type TopFloor } from './massing.ts';
+import type { HousePlan, PlanCell, PlanStory, StoryShape } from '../plan.ts';
+import { loftWindows, massingOf, type DormerChoice, type LoftWindows, type Massing, type TopFloor } from './massing.ts';
 
 /** How a light outdoors is mounted. */
 export type OutdoorMount = 'post' | 'bollard' | 'wall' | 'string';
@@ -18,6 +18,8 @@ export interface LightInput {
 
 export interface RoomInput {
   id: string;
+  /** The area's name: outdoors, it says where its lights are when theirs do not. */
+  name?: string;
   type: RoomType;
   lights: LightInput[];
 }
@@ -31,6 +33,8 @@ export interface ModelInput {
   style: HouseStyle;
   /** Whether the top floor is built into the roof; by default the design and the floor's name decide. */
   topFloor?: TopFloor;
+  /** Whether the roof has dormers; by default as the design has them. The plan should be made for the same. */
+  dormers?: DormerChoice;
 }
 
 /** A point or a box in plan space: x along the front wall, y from back to front, z up. */
@@ -169,7 +173,7 @@ export class Context {
     this.style = input.style;
     this.groups = groupsFor(input.plan);
     this.roof = massingOf(input.plan, input.style, input.topFloor);
-    this.loftWindows = loftWindows(input.plan, input.style, this.roof);
+    this.loftWindows = loftWindows(input.plan, input.style, this.roof, input.dormers);
     this.rooms.push({ index: 0, id: null, story: -1, first: 0, count: 0, area: 0 });
   }
 
@@ -187,7 +191,7 @@ export class Context {
   }
 
   /** The room-table row for a cell: its own for an area, a shared one for added halls and stairs. */
-  roomOf(cell: PlanCell, story: PlanStory): number {
+  roomOf(cell: PlanCell, story: StoryShape): number {
     const area = (cell.rect.x1 - cell.rect.x0) * (cell.rect.y1 - cell.rect.y0);
     if (cell.id && this.input.rooms.has(cell.id)) {
       let index = this.byId.get(cell.id);
@@ -202,7 +206,7 @@ export class Context {
     return this.shared(story);
   }
 
-  private shared(story: PlanStory): number {
+  private shared(story: StoryShape): number {
     let index = this.anonymous.get(story.index);
     if (index === undefined) {
       index = Math.min(254, this.rooms.length);

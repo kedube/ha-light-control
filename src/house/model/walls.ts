@@ -53,6 +53,24 @@ export interface Opening {
   kind: 'window' | 'door' | 'garage' | 'passage';
 }
 
+/**
+ * The window of a design, as every window in its walls has it: as wide as its bays leave room for,
+ * and from its sill to a head in line with the doors. One size for every room keeps the front of
+ * the house even, as a builder would. Where the design has shutters and the bays are narrow, the
+ * windows are slimmer, so the shutters of two windows never meet.
+ */
+export function windowShape(style: WindowStyle, bay: number, shutters = false): { w: number; z0: number; z1: number } {
+  const tall = (2.3 - 0.88) * style.scale[1];
+  return {
+    w: Math.min(0.98 * style.scale[0], bay - 0.7, shutters ? bay * 0.42 : Infinity),
+    z0: style.low ? 0.22 : Math.max(0.3, 2.3 - tall),
+    z1: style.low ? 2.42 : 2.3,
+  };
+}
+
+/** How wide a window's shutters may be in its bay, keeping clear of the next window's. */
+export const shutterRoom = (bay: number, window: number): number => (bay - window) / 2 - 0.25;
+
 /** The size of a room's windows: big in the living room, small and high in a bathroom, and to the style's taste. */
 function windowSize(type: RoomType, style: WindowStyle): { w: number; z0: number; z1: number } | null {
   const size = (w: number, z0: number, z1: number, main = true) => {
@@ -255,6 +273,19 @@ function roundHead(c: Context, f: Frame, a: number, b: number, z: number, fill: 
   });
 }
 
+/**
+ * How a window is dressed: shutters either side (no wider than `shutterMax`, so a window's shutters
+ * never touch the next window's), a round head, a box of flowers; `dark` when nobody's room is
+ * behind it, as in an attic.
+ */
+export interface Dress {
+  shutters: RGB | null;
+  arched: boolean;
+  box: boolean;
+  shutterMax?: number;
+  dark?: boolean;
+}
+
 /** A window set into its opening: casing, sill, sashes with glazing bars, and the glass. */
 export function windowUnit(
   c: Context,
@@ -263,7 +294,7 @@ export function windowUnit(
   floor: number,
   room: number,
   group: number,
-  dress: { shutters: RGB | null; arched: boolean; box: boolean },
+  dress: Dress,
 ): void {
   const m = c.mesh;
   const style = c.style.window;
@@ -317,11 +348,11 @@ export function windowUnit(
   m.with({ group, room, ...PAINT.baseboard }, () => {
     frameBox(c, f, o.a - 0.02, o.b + 0.02, EXT_T - 0.03, EXT_T + 0.045, z0 - 0.035, z0);
   });
-  if (dress.shutters && tall && !style.low) {
+  const shutter = Math.min(0.36, (o.b - o.a) / 2, dress.shutterMax ?? Infinity);
+  if (dress.shutters && tall && !style.low && shutter >= 0.16) {
     m.with({ group, room: 0, material: MAT.siding, color: dress.shutters }, () => {
-      const w = Math.min(0.36, (o.b - o.a) / 2);
-      frameBox(c, f, o.a - 0.1 - w, o.a - 0.1, -0.04, 0, z0, z1);
-      frameBox(c, f, o.b + 0.1, o.b + 0.1 + w, -0.04, 0, z0, z1);
+      frameBox(c, f, o.a - 0.1 - shutter, o.a - 0.1, -0.04, 0, z0, z1);
+      frameBox(c, f, o.b + 0.1, o.b + 0.1 + shutter, -0.04, 0, z0, z1);
     });
   }
   if (dress.arched && tall) roundHead(c, f, o.a, o.b, z1 + 0.02, { material: MAT.gloss, color: [44, 52, 62] }, group);
@@ -337,6 +368,12 @@ export function windowUnit(
         m.blob(p[0], p[1], p[2], 0.13, 0.13, 0.11, rand, 0.15, 1),
       );
     }
+  }
+  if (dress.dark) {
+    // Nothing to see behind the glass but the dark under the roof.
+    m.with({ group, room: 0, material: MAT.plain, color: [26, 30, 36] }, () =>
+      m.quad(at(f, o.a, 0.11, z0), at(f, o.b, 0.11, z0), at(f, o.b, 0.11, z1), at(f, o.a, 0.11, z1), [f.nx, f.ny, 0]),
+    );
   }
   m.with({ group, room, blend: true, ...PAINT.white, material: MAT.glass }, () => {
     m.quad(at(f, o.a, 0.097, z0), at(f, o.b, 0.097, z0), at(f, o.b, 0.097, z1), at(f, o.a, 0.097, z1), [f.nx, f.ny, 0]);
@@ -435,15 +472,7 @@ export function garageDoorUnit(c: Context, f: Frame, o: Opening, floor: number, 
   });
 }
 
-export function unit(
-  c: Context,
-  f: Frame,
-  o: Opening,
-  floor: number,
-  room: number,
-  group: number,
-  dress: { shutters: RGB | null; arched: boolean; box: boolean },
-): void {
+export function unit(c: Context, f: Frame, o: Opening, floor: number, room: number, group: number, dress: Dress): void {
   if (o.kind === 'window') windowUnit(c, f, o, floor, room, group, dress);
   else if (o.kind === 'door') doorUnit(c, f, o, floor, room, group);
   else if (o.kind === 'garage') garageDoorUnit(c, f, o, floor, room, group);

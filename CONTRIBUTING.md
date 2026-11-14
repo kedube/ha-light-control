@@ -45,11 +45,14 @@ src/
   aggregate.ts             counts, colors, brightness and power for a room, a floor or the home
   room-columns.ts          rooms → balanced columns on wide cards
   house/
-    plan.ts                floors and areas → a floor plan (rooms along the outside walls, stairs, garage wing)
+    plan.ts                floors and areas → a floor plan: the walls divided into bays, the front door in the
+                           middle, the rooms fitted in behind the windows, the stairs, the garage wing
     materials.ts           what surfaces are made of, and the designs a house can be built in
     model.ts               the plan → a 3D model: its mesh, its lamps, and what can be picked in each view
-    model/                 the parts of the model: massing (which floor is under the roof, and its windows),
-                           walls (openings, windows, doors), shell, roof, entry, interior, site
+    model/                 the parts of the model: massing (which floor is under the roof, the dormers and
+                           the other windows in the roof, and what the design asks of the plan),
+                           walls (openings, windows, doors), shell, roof, entry, interior, site,
+                           outdoor (where each light outdoors goes, going by its name)
     life.ts                birds, bats, fireflies, shooting stars, planes and chimney smoke: when they come,
                            where they go, and what the sky pass draws of them each frame
     furniture.ts           furniture for each kind of room

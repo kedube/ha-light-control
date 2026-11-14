@@ -137,6 +137,12 @@ export const pl: Translation = {
   opt_top_floor_full: 'Pełna kondygnacja',
   help_house_top_floor:
     'Pod dachem najwyższe piętro ma skosy i lukarny. Gdy decyduje styl, piętro o nazwie Poddasze lub Strych zawsze znajduje się tam.',
+  cfg_house_dormers: 'Lukarny',
+  opt_dormers_auto: 'Zgodnie ze stylem domu',
+  opt_dormers_on: 'Włączone',
+  opt_dormers_off: 'Wyłączone',
+  help_house_dormers:
+    'Włączone stawia lukarny na każdym dość stromym dachu, także nad niezamieszkanym strychem. Wyłączone je usuwa, a pokoje pod dachem dostają okna dachowe.',
   cfg_house_facing: 'Front domu jest zwrócony na',
   opt_facing_auto: 'W stronę słońca',
   opt_facing_n: 'Północ',

@@ -121,6 +121,12 @@ export const en = {
   opt_top_floor_full: 'A full story',
   help_house_top_floor:
     'Under the roof, the top floor has sloping ceilings and dormer windows. Left to the style, a floor named Attic or Loft is always built there.',
+  cfg_house_dormers: 'Dormers',
+  opt_dormers_auto: 'As the house style has them',
+  opt_dormers_on: 'On',
+  opt_dormers_off: 'Off',
+  help_house_dormers:
+    'On puts dormers on any roof steep enough to carry them, over an attic nobody lives in too. Off leaves them out, and the rooms under the roof get windows in the slope instead.',
   cfg_house_facing: 'The front of the house faces',
   opt_facing_auto: 'Toward the sun',
   opt_facing_n: 'North',

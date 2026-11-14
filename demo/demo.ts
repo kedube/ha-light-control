@@ -212,6 +212,10 @@ if (homeLayout === 'attic') {
   areas.guest_room = area('guest_room', 'Guest Room', 'attic');
   areas.attic = area('attic', 'Attic', 'attic');
 }
+// ?outdoor=many: one area for everything outside, its lights named for where they are, as many
+// homes have it.
+const manyOutdoor = params.get('outdoor') === 'many';
+if (manyOutdoor) areas.outside = area('outside', 'Outside', null, 'mdi:home-outline');
 for (const id of dropped) delete floors[id];
 for (const [id, a] of Object.entries(areas)) if (a.floor_id && dropped.has(a.floor_id)) delete areas[id];
 
@@ -418,6 +422,33 @@ const lightSpecs: LightSpec[] = [
   { id: 'porch_spare', name: 'Front Porch Spare', area: 'porch', modes: DIM, on: false, hidden: true },
   { id: 'christmas_tree', name: 'Christmas Tree', modes: ONOFF, on: true, icon: 'mdi:pine-tree' },
 ];
+
+if (manyOutdoor) {
+  const outside = (id: string, name: string, on = true, modes = ONOFF): LightSpec => ({
+    id: `outside_${id}`,
+    name,
+    area: 'outside',
+    modes,
+    on,
+    brightness: 85,
+    kelvin: 2700,
+  });
+  lightSpecs.push(
+    outside('porch', 'Porch Light', true, WHITE),
+    outside('garage_left', 'Garage Left'),
+    outside('garage_right', 'Garage Right'),
+    outside('landscape', 'Landscape Lights', true, DIM),
+    outside('driveway', 'Driveway Lights'),
+    outside('lamp_post', 'Lamp Post', true, DIM),
+    outside('walkway', 'Walkway Lights'),
+    outside('rear', 'Rear Lights'),
+    outside('side', 'Side Light'),
+    outside('yard', 'Yard Flood', false),
+    outside('string', 'String Lights', true, DIM),
+    outside('tree', 'Christmas Tree'),
+    outside('holiday', 'Holiday Lights'),
+  );
+}
 
 if (homeLayout === 'attic') {
   lightSpecs.push(
@@ -928,6 +959,7 @@ let cardConfig: Record<string, unknown> = { type: 'custom:light-control-card' };
 for (const [param, option] of [
   ['style', 'house_style'],
   ['top', 'house_top_floor'],
+  ['dormers', 'house_dormers'],
   ['facing', 'house_facing'],
   ['wall', 'house_color'],
   ['roof', 'roof_color'],

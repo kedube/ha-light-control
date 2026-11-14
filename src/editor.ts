@@ -66,6 +66,14 @@ function buildSchema(): Schema[] {
           ]),
         },
         {
+          name: 'house_dormers',
+          selector: select([
+            ['auto', 'opt_dormers_auto'],
+            ['on', 'opt_dormers_on'],
+            ['off', 'opt_dormers_off'],
+          ]),
+        },
+        {
           name: 'house_colors',
           type: 'grid',
           flatten: true,
@@ -172,6 +180,7 @@ const HELPERS: Record<string, StringKey> = {
   door_color: 'help_house_color',
   animate_sky: 'help_animate_sky',
   house_top_floor: 'help_house_top_floor',
+  house_dormers: 'help_house_dormers',
   house_facing: 'help_house_facing',
   weather_entity: 'help_weather_entity',
   outlet_detection: 'help_outlet_detection',
