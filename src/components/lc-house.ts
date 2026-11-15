@@ -727,6 +727,7 @@ export class LcHouse extends LitElement {
       wind,
       wet: climate?.wet,
       roof: this.groups[model.groups.roof] ?? 1,
+      light: { dir: sky.keyDir, color: sky.keyColor, ambient: sky.ambient },
     };
   }
 

@@ -28,7 +28,8 @@ import {
   SCENE_VERT,
   SCREEN_VERT,
 } from './shaders.ts';
-import { BIRD_FLOATS, GLOW_FLOATS, LIGHT_FLOATS, METEOR_FLOATS, PUFF_FLOATS, type Scene } from '../life.ts';
+import { BIRD_TEXELS } from '../birds.ts';
+import { GLOW_FLOATS, LIGHT_FLOATS, MAX_BIRDS, METEOR_FLOATS, PUFF_FLOATS, type Scene } from '../life.ts';
 
 /** How many frames go into a finished picture. */
 export const SAMPLES = 32;
@@ -79,6 +80,7 @@ const UNIT = {
   source: 8,
   bloom: 9,
   clouds: 10,
+  birds: 11,
 };
 
 /** What moves in the sky from one frame to the next. */
@@ -125,6 +127,8 @@ export class Renderer {
   private accum?: Target;
   private bloom: Target[] = [];
   private cloudTexture!: WebGLTexture;
+  /** The birds in flight this frame, a row of triangles each (see birds.ts). */
+  private birdTexture!: WebGLTexture;
   /** Whether a picture of the house is ready to lay over the sky. */
   private houseReady = false;
   private lightData?: Float32Array;
@@ -223,6 +227,11 @@ export class Renderer {
     };
     this.airTexture = env();
     this.hazeTexture = env();
+
+    this.birdTexture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.birdTexture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32F, BIRD_TEXELS, MAX_BIRDS);
+    this.nearest();
 
     // The clouds: drawn once into a texture that repeats, with smaller copies for far away.
     const clouds = this.target(CLOUD_SIZE, CLOUD_SIZE, gl.RGBA8, gl.LINEAR, true);
@@ -686,7 +695,13 @@ export class Renderer {
       // A length of 0 would mean the whole array.
       if (data && count) gl.uniform4fv(u(`${name}s[0]`), data, 0, count * floats);
     };
-    list('uBird', life?.birdCount ?? 0, life?.birds, BIRD_FLOATS);
+    const birds = life?.birdCount ?? 0;
+    gl.uniform1i(u('uBirdCount'), birds);
+    this.bind(UNIT.birds, this.birdTexture);
+    gl.uniform1i(u('uBirdData'), UNIT.birds);
+    if (life && birds) {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, BIRD_TEXELS, birds, gl.RGBA, gl.FLOAT, life.birds, 0);
+    }
     list('uGlow', life?.glowCount ?? 0, life?.glows, GLOW_FLOATS);
     list('uPuff', life?.puffCount ?? 0, life?.puffs, PUFF_FLOATS);
     list('uMeteor', life?.meteorCount ?? 0, life?.meteors, METEOR_FLOATS);

@@ -55,6 +55,8 @@ src/
                            outdoor (where each light outdoors goes, going by its name)
     life.ts                birds, bats, fireflies, shooting stars, planes and chimney smoke: when they come,
                            where they go, and what the sky pass draws of them each frame
+    birds.ts               each kind of bird as a small 3D model: its shape and colors, how it beats, glides
+                           or soars, and how it is lit and laid on the screen as triangles for the sky pass
     furniture.ts           furniture for each kind of room
     fixtures.ts            what kind of fixture a light is, from its name
     mesh.ts                collects triangles: boxes, soft boxes, cylinders, foliage

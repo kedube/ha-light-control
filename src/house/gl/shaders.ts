@@ -1,6 +1,7 @@
 // GLSL for the 3D house. Everything is procedural: there are no image files to load, so the
 // boards, bricks, shingles, grass and clouds are all drawn by these programs.
 
+import { BIRD_TRIS } from '../birds.ts';
 import { MAX_BIRDS, MAX_GLOWS, MAX_METEORS, MAX_PUFFS, MAX_SKY_LIGHTS } from '../life.ts';
 import { MAT } from '../materials.ts';
 import { MIE_G } from '../sky.ts';
@@ -819,7 +820,7 @@ uniform float uTime;
 uniform sampler2D uDepth;    // how far the house is at each pixel, to hide what is behind it
 uniform vec2 uCss;           // the picture's size in CSS pixels
 uniform vec2 uPictureSize;   // and in the pixels drawn
-uniform vec4 uBirds[${MAX_BIRDS * 5}];
+uniform sampler2D uBirdData;  // a row of triangles for each bird (see birds.ts)
 uniform int uBirdCount;
 uniform vec4 uGlows[${MAX_GLOWS * 2}];
 uniform int uGlowCount;
@@ -831,6 +832,41 @@ uniform vec4 uLights[${MAX_SKY_LIGHTS * 2}];
 uniform int uLightCount;
 uniform vec4 uTrail[2];
 out vec4 outColor;
+
+/** How far a point is outside a triangle: less than 0 inside it. */
+float toTriangle(vec2 p, vec2 a, vec2 b, vec2 c) {
+  vec2 e0 = b - a, e1 = c - b, e2 = a - c;
+  vec2 v0 = p - a, v1 = p - b, v2 = p - c;
+  vec2 q0 = v0 - e0 * clamp(dot(v0, e0) / max(dot(e0, e0), 1e-9), 0.0, 1.0);
+  vec2 q1 = v1 - e1 * clamp(dot(v1, e1) / max(dot(e1, e1), 1e-9), 0.0, 1.0);
+  vec2 q2 = v2 - e2 * clamp(dot(v2, e2) / max(dot(e2, e2), 1e-9), 0.0, 1.0);
+  // A triangle seen edge on has no inside, only its edges.
+  float s = e0.x * e2.y - e0.y * e2.x < 0.0 ? -1.0 : 1.0;
+  float inside = min(min(s * (v0.x * e0.y - v0.y * e0.x), s * (v1.x * e1.y - v1.y * e1.x)), s * (v2.x * e2.y - v2.y * e2.x));
+  float d = sqrt(min(min(dot(q0, q0), dot(q1, q1)), dot(q2, q2)));
+  return inside > 0.0 ? -d : d;
+}
+
+/** How much each corner of a triangle counts at a point: weights that add up to 1, kept within the triangle. */
+vec3 corners(vec2 p, vec2 a, vec2 b, vec2 c) {
+  float area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  if (abs(area) < 1e-6) return vec3(1.0 / 3.0);
+  float wa = ((b.x - p.x) * (c.y - p.y) - (b.y - p.y) * (c.x - p.x)) / area;
+  float wb = ((c.x - p.x) * (a.y - p.y) - (c.y - p.y) * (a.x - p.x)) / area;
+  vec3 w = max(vec3(wa, wb, 1.0 - wa - wb), 0.0);
+  return w / max(w.x + w.y + w.z, 1e-6);
+}
+
+/** A color packed into one number, 8 bits a channel. */
+vec3 unpackColor(float v) {
+  float r = floor(v / 65536.0);
+  float rest = v - r * 65536.0;
+  float g = floor(rest / 256.0);
+  return vec3(r, g, rest - g * 256.0) / 255.0;
+}
+
+/** Four points within a pixel, so that small birds keep their shapes and their edges stay smooth. */
+const vec2 WITHIN[4] = vec2[4](vec2(-0.125, -0.375), vec2(0.375, -0.125), vec2(0.125, 0.375), vec2(-0.375, 0.125));
 
 /** How far a point is from a segment, and how far along the segment its nearest point lies. */
 vec2 toSegment(vec2 p, vec2 a, vec2 b) {
@@ -990,28 +1026,67 @@ vec3 creatures(vec3 c, vec2 q, float px, float depth) {
     float a = look.a * (1.0 - smoothstep(0.1, 1.0, sqrt(r2))) * (0.65 + 0.7 * wisp);
     c = mix(c, look.rgb, clamp(a, 0.0, 1.0));
   }
+  // Birds: lit triangles, the nearest of them showing at each point. Each of four points within the
+  // pixel takes the color of the nearest triangle there, and how much of the pixel the bird covers
+  // comes from how far those points are inside its triangles.
   for (int i = 0; i < ${MAX_BIRDS}; i++) {
     if (i >= uBirdCount) break;
-    vec4 body = uBirds[i * 5];      // head, tail
-    vec4 left = uBirds[i * 5 + 1];  // elbow, tip
-    vec4 right = uBirds[i * 5 + 2];
-    vec4 k = uBirds[i * 5 + 3];     // depth, thickness, opacity
-    if (k.x > depth) continue;
-    vec2 root = mix(body.zw, body.xy, 0.55);
-    float reach = max(max(length(left.zw - root), length(right.zw - root)), length(body.zw - root));
-    if (length(q - root) > reach + k.y + 2.0 * px) continue;
-    float w = k.y;
-    // A body, and two wings from its shoulders, thinning toward the tips.
-    float d = toSegment(q, body.zw, body.xy).x - w;
-    vec2 e = toSegment(q, root, left.xy);
-    d = min(d, e.x - w * mix(0.95, 0.7, e.y));
-    e = toSegment(q, left.xy, left.zw);
-    d = min(d, e.x - w * mix(0.7, 0.2, e.y));
-    e = toSegment(q, root, right.xy);
-    d = min(d, e.x - w * mix(0.95, 0.7, e.y));
-    e = toSegment(q, right.xy, right.zw);
-    d = min(d, e.x - w * mix(0.7, 0.2, e.y));
-    c = mix(c, uBirds[i * 5 + 4].rgb, clamp(0.5 - d / px, 0.0, 1.0) * k.z);
+    vec4 at = texelFetch(uBirdData, ivec2(0, i), 0);    // where, how far it reaches, how many triangles
+    vec4 look = texelFetch(uBirdData, ivec2(1, i), 0);  // depth, opacity, haze
+    if (look.x > depth) continue;
+    vec2 off = q - at.xy;
+    if (dot(off, off) > (at.z + 2.0 * px) * (at.z + 2.0 * px)) continue;
+    int count = int(at.w);
+    float cover[4] = float[4](0.0, 0.0, 0.0, 0.0);
+    float front[4] = float[4](1e9, 1e9, 1e9, 1e9);
+    float near[4] = float[4](1e9, 1e9, 1e9, 1e9);
+    int pick[4] = int[4](-1, -1, -1, -1);
+    int close[4] = int[4](-1, -1, -1, -1);
+    for (int t = 0; t < ${BIRD_TRIS}; t++) {
+      if (t >= count) break;
+      vec4 A = texelFetch(uBirdData, ivec2(2 + t * 3, i), 0);
+      vec4 B = texelFetch(uBirdData, ivec2(3 + t * 3, i), 0);
+      vec2 lo = min(A.xy, min(A.zw, B.xy)) - 1.5 * px;
+      vec2 hi = max(A.xy, max(A.zw, B.xy)) + 1.5 * px;
+      if (q.x < lo.x || q.y < lo.y || q.x > hi.x || q.y > hi.y) continue;
+      float zc = texelFetch(uBirdData, ivec2(4 + t * 3, i), 0).x;
+      for (int s = 0; s < 4; s++) {
+        vec2 p = q + WITHIN[s] * px;
+        // Half a pixel thicker all round: a real wing has some thickness, so one seen edge on
+        // still shows as a fine line rather than vanishing.
+        float d = toTriangle(p, A.xy, A.zw, B.xy) - 0.5 * px;
+        // Triangles that meet along an edge add up to the whole of it there, with no seam.
+        cover[s] += clamp(0.5 - d / (0.5 * px), 0.0, 1.0);
+        if (d < 0.0) {
+          float z = dot(corners(p, A.xy, A.zw, B.xy), vec3(B.z, B.w, zc));
+          if (z < front[s]) {
+            front[s] = z;
+            pick[s] = t;
+          }
+        } else if (d < near[s]) {
+          near[s] = d;
+          close[s] = t;
+        }
+      }
+    }
+    vec3 sum = vec3(0.0);
+    float total = 0.0;
+    for (int s = 0; s < 4; s++) {
+      float k = min(cover[s], 1.0);
+      int t = pick[s] >= 0 ? pick[s] : close[s];
+      if (k <= 0.0 || t < 0) continue;
+      vec4 A = texelFetch(uBirdData, ivec2(2 + t * 3, i), 0);
+      vec4 B = texelFetch(uBirdData, ivec2(3 + t * 3, i), 0);
+      vec4 C = texelFetch(uBirdData, ivec2(4 + t * 3, i), 0);
+      vec3 w = corners(q + WITHIN[s] * px, A.xy, A.zw, B.xy);
+      sum += (unpackColor(C.y) * w.x + unpackColor(C.z) * w.y + unpackColor(C.w) * w.z) * k;
+      total += k;
+    }
+    if (total > 0.0) {
+      // Far birds fade a little into the haze behind them.
+      vec3 bird = mix(sum / total, c, look.z);
+      c = mix(c, bird, total * 0.25 * look.y);
+    }
   }
   for (int i = 0; i < ${MAX_GLOWS}; i++) {
     if (i >= uGlowCount) break;

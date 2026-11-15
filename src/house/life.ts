@@ -6,8 +6,11 @@
 // Nothing comes at a set time, from the same side or in the same way twice in a row, so it never
 // turns into a loop that the eye learns.
 
+import { BIRD_FLOATS, DAYLIGHT, layBird, posture, type Kind, type Light } from './birds.ts';
 import { FOV, type Camera, type SkyFrame } from './camera.ts';
-import { dot, normalize, toWorld, transform, type Vec3 } from './math.ts';
+import { cross, dot, normalize, toWorld, transform, type Vec3 } from './math.ts';
+
+export { BIRD_FLOATS, KINDS, type Kind } from './birds.ts';
 
 /** A point in plan space: x along the front of the house, y from its back to its front, z up. */
 export type Point = [number, number, number];
@@ -56,12 +59,17 @@ export interface Conditions {
   wet?: boolean;
   /** How much of the roof shows, 0–1: it lifts away when a floor is opened. */
   roof: number;
+  /** The sun or the moon and the light of the sky, as they light the house; daylight when not given. */
+  light?: Light;
 }
 
 /** How things are put on the screen. */
 export interface Lens {
-  /** A point on the screen: CSS pixels from the top left, its depth (0–1) and how many pixels a meter is there. */
-  point(p: Point): { x: number; y: number; depth: number; scale: number } | null;
+  /**
+   * A point on the screen: CSS pixels from the top left, its depth (0–1), how many pixels a meter is
+   * there, and how far it is from the viewer along the line of sight, in meters.
+   */
+  point(p: Point): { x: number; y: number; depth: number; scale: number; distance: number } | null;
   /** A direction in the sky (world space) on the screen, in CSS pixels; null when it is behind the viewer. */
   sky(d: Vec3): [number, number] | null;
   /** The direction in the sky behind a spot on the screen. */
@@ -70,6 +78,8 @@ export interface Lens {
   forward: [number, number];
   width: number;
   height: number;
+  /** Where the viewer is, in plan space. */
+  eye: Point;
 }
 
 /** The lens of a camera, with the sky seen through the frame behind the house. */
@@ -89,6 +99,7 @@ export function lensFor(camera: Camera, frame: SkyFrame, target: Vec3, width: nu
         y: (0.5 - (c[1] / c[3]) * 0.5) * height,
         depth: (c[2] / c[3]) * 0.5 + 0.5,
         scale: focal / c[3],
+        distance: c[3],
       };
     },
     sky(d) {
@@ -104,6 +115,7 @@ export function lensFor(camera: Camera, frame: SkyFrame, target: Vec3, width: nu
     forward: [look[0] / l, look[1] / l],
     width,
     height,
+    eye: [camera.eye[0], camera.eye[2], camera.eye[1]],
   };
 }
 
@@ -114,16 +126,15 @@ export const MAX_GLOWS = 20;
 export const MAX_PUFFS = 14;
 export const MAX_METEORS = 2;
 export const MAX_SKY_LIGHTS = 6;
-/** Numbers per bird, per glow and so on, in the arrays below: whole vec4s for the shader. */
-export const BIRD_FLOATS = 20;
+/** Numbers per glow and so on, in the arrays below: whole vec4s for the shader. Birds are in birds.ts. */
 export const GLOW_FLOATS = 8;
 export const PUFF_FLOATS = 8;
 export const METEOR_FLOATS = 12;
 export const LIGHT_FLOATS = 8;
 
 /**
- * One frame of it, in CSS pixels from the top left. Birds: head, tail, both elbows and wing
- * tips, then depth, thickness, opacity and color. Glows: where, how far the glow reaches, depth,
+ * One frame of it, in CSS pixels from the top left. Birds: a row of triangles each, nearest last
+ * (see `BIRD_TEXELS` in birds.ts). Glows: where, how far the glow reaches, depth,
  * color and the size of the spark. Puffs of smoke: where, radius, depth, color and opacity.
  * Meteors: from, to, how far along, brightness, width, whether a fireball, color, and its glowing
  * train. Lights in the sky: where, size and color. The trail: head, tail, its widths and opacity.
@@ -237,18 +248,12 @@ function overRoofs(points: Point[], stage: Stage): Point[] {
 
 // ─── Birds ───────────────────────────────────────────────────────────────────
 
-export type Kind = 'songbird' | 'swallow' | 'crow' | 'gull' | 'goose' | 'hawk' | 'bat';
-export const KINDS: Kind[] = ['songbird', 'swallow', 'crow', 'gull', 'goose', 'hawk', 'bat'];
+// How each kind looks and holds its wings is in birds.ts; here is where and how fast it flies.
 
 interface Species {
-  /** Wingspan and body length, in meters; thickness as a share of the span. */
+  /** Wingspan, in meters, and speed, in meters a second. */
   span: number;
-  body: number;
-  thick: number;
   speed: [number, number];
-  color: RGB;
-  /** Pale enough to catch the light, as a gull does. */
-  pale?: boolean;
   /** How high it flies: above the ground, and above the ridge of the roof. */
   low: (ridge: number) => number;
   high: (ridge: number) => number;
@@ -257,65 +262,43 @@ interface Species {
 const SPECIES: Record<Kind, Species> = {
   songbird: {
     span: 0.25,
-    body: 0.55,
-    thick: 0.1,
     speed: [7.5, 10],
-    color: [0.24, 0.19, 0.15],
     low: () => 2.2,
     high: (r) => r + 2.5,
   },
   swallow: {
     span: 0.32,
-    body: 0.5,
-    thick: 0.075,
     speed: [10, 13],
-    color: [0.09, 0.1, 0.16],
     low: () => 1.4,
     high: (r) => r + 1,
   },
   crow: {
     span: 0.95,
-    body: 0.46,
-    thick: 0.08,
     speed: [8.5, 10.5],
-    color: [0.06, 0.06, 0.07],
     low: (r) => r - 2,
     high: (r) => r + 3,
   },
   gull: {
     span: 1.25,
-    body: 0.36,
-    thick: 0.065,
     speed: [8.5, 11],
-    color: [0.9, 0.91, 0.92],
-    pale: true,
     low: (r) => r - 1,
     high: (r) => r + 4,
   },
   goose: {
     span: 1.6,
-    body: 0.58,
-    thick: 0.075,
     speed: [12, 14.5],
-    color: [0.3, 0.27, 0.23],
     low: (r) => r + 1,
     high: (r) => r + 5,
   },
   hawk: {
     span: 1.25,
-    body: 0.42,
-    thick: 0.075,
     speed: [6, 7.5],
-    color: [0.36, 0.26, 0.18],
     low: (r) => r + 1.5,
     high: (r) => r + 4.5,
   },
   bat: {
     span: 0.3,
-    body: 0.35,
-    thick: 0.1,
     speed: [4.5, 6.5],
-    color: [0.08, 0.06, 0.06],
     low: () => 1.6,
     high: (r) => r + 1,
   },
@@ -344,57 +327,15 @@ interface Flight {
   end: number;
 }
 
-/** How a bird holds its wings at a moment: raised (1) or lowered (-1) at the elbow and the tip, and how far folded. */
-function wings(kind: Kind, t: number, bird: Bird): { up: number; tip: number; fold: number } {
-  const s = bird.seed;
-  const beat = (rate: number, lag = 0) => Math.sin(t * rate * TAU + bird.phase - lag);
-  const cycle = (length: number) => (((t + s[0] * length) % length) + length) % length;
-  switch (kind) {
-    case 'songbird': {
-      // Bounding: a burst of wingbeats, then wings folded for a moment.
-      const c = cycle(0.78 + s[1] * 0.2);
-      if (c < 0.42) return { up: beat(7.5), tip: beat(7.5, 0.7), fold: 0 };
-      return { up: 0.2, tip: 0.1, fold: 0.88 };
-    }
-    case 'swallow': {
-      const c = cycle(1.1 + s[1] * 0.5);
-      if (c < 0.55) return { up: beat(6), tip: beat(6, 0.6), fold: 0.1 };
-      return { up: 0.05, tip: -0.1, fold: 0.45 };
-    }
-    case 'crow':
-      return { up: beat(3.2) * 0.85, tip: beat(3.2, 0.8) * 0.9, fold: 0.05 };
-    case 'gull': {
-      // A few slow beats, then a long glide on bent wings.
-      const c = cycle(4.2 + s[1] * 2);
-      if (c < 1.6) return { up: beat(2.5) * 0.75, tip: beat(2.5, 0.7) * 0.8, fold: 0 };
-      return { up: 0.32, tip: -0.2, fold: 0.08 };
-    }
-    case 'goose':
-      return { up: beat(2.9) * 0.7, tip: beat(2.9, 0.7) * 0.8, fold: 0 };
-    case 'hawk': {
-      // Soaring on raised wings, with a few beats now and then.
-      const c = cycle(6.5 + s[1] * 4);
-      if (c < 0.9) return { up: beat(3) * 0.6, tip: beat(3, 0.6) * 0.6, fold: 0 };
-      return { up: 0.22, tip: 0.28, fold: 0 };
-    }
-    default: {
-      // A bat flutters, never quite the same beat twice.
-      const rate = 8.5 + 1.5 * Math.sin(t * 2.3 + s[2] * 9);
-      const w = Math.sin(t * rate * TAU + bird.phase);
-      return { up: w * 0.9, tip: Math.sin(t * rate * TAU + bird.phase - 0.5), fold: w < 0 ? 0.35 : 0.15 };
-    }
-  }
-}
-
 /** How a bird of a kind strays from the line its flock flies along, as a swallow swoops or a bat jinks. */
 function wander(kind: Kind, t: number, bird: Bird): { across: number; up: number } {
   const s = bird.seed;
   switch (kind) {
     case 'songbird': {
-      // It rises while it beats its wings and sinks while they are folded.
-      const length = 0.78 + s[1] * 0.2;
-      const c = (((t + s[0] * length) % length) + length) % length;
-      const rise = c < 0.42 ? c / 0.42 : 1 - (c - 0.42) / (length - 0.42);
+      // It rises while it beats its wings and sinks while they are shut, in time with `posture`.
+      const length = 0.7 + s[1] * 0.25;
+      const c = (((t + s[0] * 10) % length) + length) % length;
+      const rise = c < 0.36 ? c / 0.36 : 1 - (c - 0.36) / (length - 0.36);
       return { across: 0, up: 0.22 * smooth(0, 1, rise) };
     }
     case 'swallow':
@@ -464,6 +405,8 @@ export class Life {
   readonly scene: Scene = emptyScene();
   private readonly rand: Rand;
   private flights: Flight[] = [];
+  /** Room to lay out each bird before the nearest are chosen, kept from frame to frame. */
+  private rows: Float32Array[] = [];
   private meteors: Meteor[] = [];
   private crossings: Crossing[] = [];
   private fireflies: Firefly[] = [];
@@ -730,128 +673,73 @@ export class Life {
 
   private drawBirds(now: number, cond: Conditions, lens: Lens): void {
     const scene = this.scene;
-    const out: { depth: number; data: number[] }[] = [];
-    // Silhouettes against the sky; a pale bird shows its color in the sun.
-    const light = smooth(-4, 12, cond.sun);
+    const light = cond.light ?? DAYLIGHT;
+    const drawn: { depth: number; row: Float32Array }[] = [];
     for (const flight of this.flights) {
       const species = SPECIES[flight.kind];
+      const small = species.span < 0.4;
       const t = now - flight.start;
-      const lead = t * flight.speed;
       for (const bird of flight.birds) {
-        const d = lead - bird.back;
+        const d = t * flight.speed - bird.back;
         if (d < 0 || d > flight.route.length) continue;
-        const a = flight.route.get(d - 0.6);
-        const b = flight.route.get(d + 0.6);
-        let p = flight.route.get(d);
-        // Heading, the bird's left, and up; it banks into its turns.
-        const heading = normalize([b[0] - a[0], b[1] - a[1], b[2] - a[2]]) as Point;
-        const flat = Math.hypot(heading[0], heading[1]) || 1;
-        const left: Point = [-heading[1] / flat, heading[0] / flat, 0];
-        const ahead = flight.route.get(d + 2.5);
-        const behind = flight.route.get(d - 2.5);
-        const turn =
-          ((ahead[0] - p[0]) * (p[1] - behind[1]) - (ahead[1] - p[1]) * (p[0] - behind[0])) /
-          Math.max(1e-6, 2.5 * 2.5 * 2.5);
-        const bank = clamp(Math.atan((-turn * flight.speed * flight.speed) / 9.8), -0.8, 0.8);
-        const side: Point = [left[0] * Math.cos(bank), left[1] * Math.cos(bank), -Math.sin(bank)];
-        const up: Point = [left[0] * Math.sin(bank), left[1] * Math.sin(bank), Math.cos(bank)];
-        const stray = wander(flight.kind, t, bird);
-        p = add(add(p, left, bird.across + stray.across), [0, 0, 1], bird.up + stray.up);
-        if (flight.kind === 'songbird' || flight.kind === 'bat' || flight.kind === 'swallow')
-          p[2] = Math.max(0.6, p[2]);
-        const pose = wings(flight.kind, t, bird);
-        // Small birds are drawn a little larger than life, so they read as birds at the size of a card.
-        const s = bird.span * (species.span < 0.4 ? 1.5 : 1);
-        const reach = (s / 2) * (1 - 0.7 * pose.fold);
-        const wing = (k: number): [Point, Point] => {
-          const elbow = add(add(add(p, side, k * reach * 0.45), up, s * 0.16 * pose.up), heading, -s * 0.04);
-          const tip = add(
-            add(add(p, side, k * reach), up, s * (0.16 * pose.up + 0.22 * pose.tip)),
-            heading,
-            -s * (0.1 + 0.18 * pose.fold),
-          );
-          return [elbow, tip];
+        /** Where it is at a moment: on its flock's line, at its place in the flock, and straying from it. */
+        const where = (time: number): Point => {
+          const along = clamp(time * flight.speed - bird.back, 0, flight.route.length);
+          const a = flight.route.get(along - 0.6);
+          const b = flight.route.get(along + 0.6);
+          const flat = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+          const left: Point = [-(b[1] - a[1]) / flat, (b[0] - a[0]) / flat, 0];
+          const stray = wander(flight.kind, time, bird);
+          const p = add(add(flight.route.get(along), left, bird.across + stray.across), [0, 0, 1], bird.up + stray.up);
+          if (small) p[2] = Math.max(0.6, p[2]);
+          return p;
         };
-        const [leftElbow, leftTip] = wing(1);
-        const [rightElbow, rightTip] = wing(-1);
-        const head = add(p, heading, s * species.body * 0.55);
-        const tail = add(p, heading, -s * species.body * 0.45);
-        const points = [head, tail, leftElbow, leftTip, rightElbow, rightTip].map((q) => lens.point(q));
-        const middle = lens.point(p);
-        if (!middle || points.some((q) => !q)) continue;
-        const screen = (points as { x: number; y: number }[]).map((q) => ({ x: q.x, y: q.y }));
-        const margin = 30;
-        if (
-          screen.every((q) => q.x < -margin || q.x > lens.width + margin || q.y < -margin || q.y > lens.height + margin)
-        )
-          continue;
+        // Which way it is going, from a moment either side, and how hard it turns, to bank into the turn.
+        const h = 1 / 30;
+        const before = where(t - h);
+        const here = where(t);
+        const after = where(t + h);
+        const ahead = normalize([after[0] - before[0], after[1] - before[1], after[2] - before[2]]);
+        const level = Math.hypot(ahead[0], ahead[1]);
+        if (level < 1e-3) continue;
+        // Its body follows a climb or a dive, but never stands on end.
+        const pitch = clamp(Math.atan2(ahead[2], level), -0.5, 0.5);
+        const heading: Point = [
+          (ahead[0] / level) * Math.cos(pitch),
+          (ahead[1] / level) * Math.cos(pitch),
+          Math.sin(pitch),
+        ];
+        const right0: Point = [ahead[1] / level, -ahead[0] / level, 0];
+        const up0 = cross(right0, heading) as Point;
+        const sideways =
+          ((after[0] - 2 * here[0] + before[0]) * right0[0] + (after[1] - 2 * here[1] + before[1]) * right0[1]) /
+          (h * h);
+        const bank = clamp(Math.atan(sideways / 9.8), -1, 1);
+        const right = add(right0.map((v) => v * Math.cos(bank)) as Point, up0, -Math.sin(bank));
+        const up = add(up0.map((v) => v * Math.cos(bank)) as Point, right0, Math.sin(bank));
+        const pose = posture(flight.kind, t, bird.phase, bird.seed);
+        // It spreads its tail to turn.
+        pose.tail = Math.max(pose.tail, Math.abs(bank) * 0.7);
+        // Small birds are drawn a little larger than life, so they read as birds at the size of a card.
+        const s = bird.span * (small ? 1.5 : 1);
+        const at = add(here, up, pose.bob * s);
+        const middle = lens.point(at);
+        if (!middle) continue;
         // Nothing comes so near that it fills the picture.
         if (s * middle.scale > lens.height * 0.25) continue;
-        // A bird that crosses the view shows its wings end on, and reads as anything but a bird. The
-        // eye knows a bird by its spread wings, so wings seen end on open out toward the screen: the
-        // more they are foreshortened, the more they spread across it.
-        const root = { x: lerp(screen[1].x, screen[0].x, 0.55), y: lerp(screen[1].y, screen[0].y, 0.55) };
-        const halfSpan = reach * middle.scale;
-        const seen = Math.hypot(screen[3].x - root.x, screen[3].y - root.y);
-        const open = smooth(0.3, 0.8, 1 - seen / Math.max(halfSpan, 1e-6));
-        if (open > 0) {
-          const run = { x: screen[0].x - screen[1].x, y: screen[0].y - screen[1].y };
-          const length = Math.hypot(run.x, run.y) || 1;
-          // Across the screen, tilted a little as it climbs or dives and as it banks.
-          const tilt = 0.3 * Math.atan2(run.y, Math.abs(run.x)) * Math.sign(run.x || 1) - bank * 0.5;
-          const axis = { x: Math.cos(tilt), y: Math.sin(tilt) };
-          const sweep = { x: (-run.x / length) * s * middle.scale, y: (-run.y / length) * s * middle.scale };
-          const lift = s * middle.scale;
-          // Each wing goes to the side it already leans toward, so they never swap over.
-          const toward = Math.sign((screen[3].x - root.x) * axis.x + (screen[3].y - root.y) * axis.y) || 1;
-          for (const [elbow, tip, k] of [
-            [2, 3, toward],
-            [4, 5, -toward],
-          ]) {
-            const spread = [
-              {
-                x: root.x + axis.x * k * halfSpan * 0.45 + sweep.x * 0.04,
-                y: root.y + axis.y * k * halfSpan * 0.45 - lift * 0.16 * pose.up + sweep.y * 0.04,
-              },
-              {
-                x: root.x + axis.x * k * halfSpan + sweep.x * (0.1 + 0.18 * pose.fold),
-                y:
-                  root.y +
-                  axis.y * k * halfSpan -
-                  lift * (0.16 * pose.up + 0.22 * pose.tip) +
-                  sweep.y * (0.1 + 0.18 * pose.fold),
-              },
-            ];
-            screen[elbow] = {
-              x: lerp(screen[elbow].x, spread[0].x, open),
-              y: lerp(screen[elbow].y, spread[0].y, open),
-            };
-            screen[tip] = { x: lerp(screen[tip].x, spread[1].x, open), y: lerp(screen[tip].y, spread[1].y, open) };
-          }
-        }
         const fade = smooth(0, 3, d) * smooth(0, 3, flight.route.length - d);
-        const color = species.pale
-          ? species.color.map((v) => v * (0.3 + 0.7 * light))
-          : species.color.map((v) => v * (0.55 + 0.45 * light));
-        out.push({
-          depth: middle.depth,
-          data: [
-            ...screen.flatMap((q) => [q.x, q.y]),
-            middle.depth,
-            Math.max(0.6, s * species.thick * middle.scale),
-            fade,
-            0,
-            ...color,
-            0,
-          ],
-        });
+        // Far birds fade a little into the haze.
+        const haze = 0.5 * (1 - Math.exp(-middle.distance / 300));
+        const row = (this.rows[drawn.length] ??= new Float32Array(BIRD_FLOATS));
+        if (!layBird(row, flight.kind, s, { at, forward: heading, right, up }, pose, lens, light, fade, haze)) continue;
+        drawn.push({ depth: middle.depth, row });
       }
     }
     // The farthest first, so nearer birds pass in front of them.
-    out.sort((x, y) => y.depth - x.depth);
-    scene.birdCount = Math.min(MAX_BIRDS, out.length);
-    for (let i = 0; i < scene.birdCount; i++)
-      scene.birds.set(out[out.length - scene.birdCount + i].data, i * BIRD_FLOATS);
+    drawn.sort((x, y) => y.depth - x.depth);
+    scene.birdCount = Math.min(MAX_BIRDS, drawn.length);
+    const first = drawn.length - scene.birdCount;
+    for (let i = 0; i < scene.birdCount; i++) scene.birds.set(drawn[first + i].row, i * BIRD_FLOATS);
   }
 
   // ─── Fireflies ─────────────────────────────────────────────────────────────

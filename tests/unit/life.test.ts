@@ -125,12 +125,19 @@ describe('life around the house', () => {
       run(life, day({ month: 6 }), 40, () => {
         const scene = life.scene;
         for (let i = 0; i < scene.birdCount; i++) {
+          // Where it is and how far it reaches, then its triangles' corners.
           const b = scene.birds.subarray(i * BIRD_FLOATS, (i + 1) * BIRD_FLOATS);
-          const xs = [b[0], b[2], b[4], b[6], b[8], b[10]];
-          const ys = [b[1], b[3], b[5], b[7], b[9], b[11]];
+          const xs: number[] = [];
+          const ys: number[] = [];
+          for (let t = 0; t < b[3]; t++) {
+            const o = (2 + t * 3) * 4;
+            xs.push(b[o], b[o + 2], b[o + 4]);
+            ys.push(b[o + 1], b[o + 3], b[o + 5]);
+          }
+          assert.ok(b[3] > 10, `${kind}: drawn in triangles`);
+          assert.ok([...b.slice(0, 8), ...xs, ...ys].every(Number.isFinite), `${kind}: a bird is somewhere`);
           if (xs.some((x) => x > 0 && x < lens.width) && ys.some((y) => y > 0 && y < lens.height)) seen++;
           biggest = Math.max(biggest, Math.max(...xs) - Math.min(...xs));
-          assert.ok(b.slice(0, 16).every(Number.isFinite), `${kind}: a bird is somewhere`);
         }
       });
       assert.ok(seen > 10, `${kind} is seen for a while: ${seen} frames`);
