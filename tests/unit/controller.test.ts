@@ -237,4 +237,44 @@ describe('LightController', () => {
 
     assert.equal(controller.view('light.living_room_ceiling', 'light')!.brightness, 70);
   });
+
+  it('undo restores what the user last set, not what Home Assistant last reported', async () => {
+    const { calls, controller, host } = setup();
+    let undo: (() => void) | undefined;
+    host.addEventListener('hass-notification', (ev) => (undo = (ev as CustomEvent).detail.action.action));
+    controller.setBrightness(['light.living_room_lamp'], 90);
+    controller.setKelvin(['light.living_room_lamp'], 3000);
+    controller.turnOffWithUndo(['light.living_room_lamp']);
+    await settle();
+    calls.length = 0;
+    undo!();
+    await settle();
+    assert.deepEqual(calls[0].data, {
+      entity_id: ['light.living_room_lamp'],
+      brightness_pct: 90,
+      color_temp_kelvin: 3000,
+    });
+  });
+
+  it('offers undo for a light that is only optimistically on', async () => {
+    const { calls, controller, host } = setup();
+    let undo: (() => void) | undefined;
+    host.addEventListener('hass-notification', (ev) => (undo = (ev as CustomEvent).detail.action.action));
+    controller.setPower(['light.living_room_ceiling'], true);
+    controller.turnOffWithUndo(['light.living_room_ceiling']);
+    assert.ok(undo, 'a toast with Undo was shown');
+    await settle();
+    calls.length = 0;
+    undo!();
+    await settle();
+    assert.deepEqual(
+      calls.map((c) => [c.service, c.data.entity_id]),
+      [['turn_on', ['light.living_room_ceiling']]],
+    );
+  });
+
+  it('a failed scene does not leave an unhandled rejection', async () => {
+    const { controller } = setup(true);
+    await assert.doesNotReject(controller.activateScene('scene.movie')!);
+  });
 });

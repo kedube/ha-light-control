@@ -38,14 +38,23 @@ export interface EntityView {
 const DIMMABLE_MODES = ['brightness', 'color_temp', 'hs', 'xy', 'rgb', 'rgbw', 'rgbww', 'white'];
 const COLOR_MODES = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'];
 
-export const computeDomain = (entityId: string): string => entityId.slice(0, entityId.indexOf('.'));
+/** "light" for "light.kitchen"; empty when there is no domain. */
+export const computeDomain = (entityId: string): string => {
+  const dot = entityId.indexOf('.');
+  return dot < 0 ? '' : entityId.slice(0, dot);
+};
 
-const asNumber = (value: unknown): number | undefined =>
-  typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+const asNumber = (value: unknown): number | undefined => (isFiniteNumber(value) ? value : undefined);
 
 const asPair = (value: unknown): [number, number] | undefined =>
-  Array.isArray(value) && value.length >= 2 && value.every((v) => typeof v === 'number')
-    ? [value[0], value[1]]
+  Array.isArray(value) && value.length >= 2 && value.every(isFiniteNumber) ? [value[0], value[1]] : undefined;
+
+/** A copy, never HA's own array: the color ends up in inline styles, so only plain numbers pass. */
+const asRgb = (value: unknown): RGB | undefined =>
+  Array.isArray(value) && value.length === 3 && value.every(isFiniteNumber)
+    ? [value[0], value[1], value[2]]
     : undefined;
 
 export function isLightGroup(stateObj: HassEntity): boolean {
@@ -110,21 +119,14 @@ export function entityView(stateObj: HassEntity, kind: EntityKind, override?: Ov
       ? Math.max(1, Math.round((rawBrightness / 255) * 100))
       : 100
     : 0;
-  if (override?.brightness !== undefined) brightness = override.brightness;
+  // Off and unavailable lights stay at 0; on/off-only lights ignore the level HA will drop.
+  if (on && dimmable && override?.brightness !== undefined) brightness = override.brightness;
 
   const colorTempMireds = asNumber(attrs.color_temp);
   let kelvin = asNumber(attrs.color_temp_kelvin) ?? (colorTempMireds ? miredToKelvin(colorTempMireds) : undefined);
   let hs = asPair(attrs.hs_color);
   let colorMode = typeof attrs.color_mode === 'string' ? attrs.color_mode : undefined;
-  const stateRgb = attrs.rgb_color;
-  let rgb: RGB =
-    Array.isArray(stateRgb) && stateRgb.length === 3
-      ? (stateRgb as RGB)
-      : kelvin
-        ? kelvinToRgb(kelvin)
-        : hs
-          ? hsToRgb(hs[0], hs[1])
-          : WARM_GLOW;
+  let rgb: RGB = asRgb(attrs.rgb_color) ?? (kelvin ? kelvinToRgb(kelvin) : hs ? hsToRgb(hs[0], hs[1]) : WARM_GLOW);
 
   if (override?.hs) {
     hs = override.hs;
@@ -166,6 +168,7 @@ export function overrideSettled(override: Override, view: EntityView, now: numbe
   if (
     override.brightness !== undefined &&
     override.brightness > 0 &&
+    view.dimmable &&
     Math.abs(override.brightness - view.brightness) > 2
   ) {
     return false;

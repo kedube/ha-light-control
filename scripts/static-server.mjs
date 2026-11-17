@@ -2,7 +2,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -20,7 +20,8 @@ export function startServer(root = '.') {
     try {
       const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
       let file = normalize(join(base, path));
-      if (!file.startsWith(base)) throw new Error('outside root');
+      // With the separator, "/repo-other" no longer counts as being inside "/repo".
+      if (file !== base && !file.startsWith(base + sep)) throw new Error('outside root');
       if ((await stat(file)).isDirectory()) file = join(file, 'index.html');
       res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
       createReadStream(file).pipe(res);

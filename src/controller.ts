@@ -120,7 +120,8 @@ export class LightController {
 
   activateScene(sceneId: string): Promise<unknown> | undefined {
     haptic('success');
-    return this.hass?.callService('scene', 'turn_on', { entity_id: sceneId });
+    // Home Assistant already shows its own toast when a service call fails; callers don't await this.
+    return this.hass?.callService('scene', 'turn_on', { entity_id: sceneId }).catch(() => undefined);
   }
 
   /**
@@ -173,8 +174,9 @@ export class LightController {
   }
 
   /**
-   * What was on, with its brightness and color. Light groups are replaced by their members:
-   * turning a group back on would also switch on members that were off.
+   * What was on, with its brightness and color, as the user sees it: a change Home Assistant has
+   * not confirmed yet wins over the state it last reported. Light groups are replaced by their
+   * members: turning a group back on would also switch on members that were off.
    */
   private snapshot(entityIds: string[]): Snapshot[] {
     const ids = new Set<string>();
@@ -185,10 +187,16 @@ export class LightController {
       else if (!stateObj || !isLightGroup(stateObj)) ids.add(id);
     }
     const result: Snapshot[] = [];
+    const now = Date.now();
     for (const id of ids) {
       const stateObj = this.hass?.states[id];
-      if (stateObj?.state !== 'on') continue;
-      result.push({ entityId: id, data: computeDomain(id) === 'light' ? restoreData(stateObj) : {} });
+      const stored = this.overrides.get(id);
+      const override = stored && stored.expires >= now ? stored : undefined;
+      if (!(override?.on ?? stateObj?.state === 'on')) continue;
+      const isLight = computeDomain(id) === 'light';
+      const data = isLight && stateObj ? restoreData(stateObj) : {};
+      if (isLight && override) applyOverride(data, override);
+      result.push({ entityId: id, data });
     }
     return result;
   }
@@ -268,6 +276,21 @@ export class LightController {
         });
     });
     return Promise.allSettled(calls);
+  }
+}
+
+const COLOR_KEYS = ['color_temp_kelvin', 'hs_color', 'xy_color', 'rgb_color', 'rgbw_color', 'rgbww_color'];
+
+/** Lays a change the user just made over the restore data read from Home Assistant's state. */
+function applyOverride(data: Record<string, unknown>, override: Override): void {
+  if (override.brightness) {
+    delete data.brightness;
+    data.brightness_pct = override.brightness;
+  }
+  if (override.hs || override.kelvin) {
+    for (const key of COLOR_KEYS) delete data[key];
+    if (override.hs) data.hs_color = override.hs;
+    else data.color_temp_kelvin = override.kelvin;
   }
 }
 

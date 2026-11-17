@@ -10,10 +10,11 @@ import {
   kelvinToRgb,
   luminance,
   rgbToHs,
+  WARM_GLOW,
 } from '../../src/color.ts';
 import { globToRegExp, makeEntityMatcher, resolveConfig } from '../../src/config.ts';
 import { discover } from '../../src/discovery.ts';
-import { entityView, overrideSettled } from '../../src/entity-model.ts';
+import { computeDomain, entityView, overrideSettled } from '../../src/entity-model.ts';
 import { config, home, state } from './fixtures.ts';
 
 describe('config', () => {
@@ -154,6 +155,34 @@ describe('entityView', () => {
     const updated = state('light.lamp', 'on', { ...lamp.attributes, brightness: 204 });
     assert.equal(overrideSettled(override, entityView(updated, 'light'), Date.now()), true);
     assert.equal(overrideSettled(override, entityView(lamp, 'light'), Date.now() + 6000), true);
+  });
+
+  it('ignores brightness overrides on lights that cannot dim or are unavailable', () => {
+    const override = { on: true, brightness: 40, expires: Date.now() + 5000 };
+    const bulb = state('light.bulb', 'on', { supported_color_modes: ['onoff'] });
+    assert.equal(entityView(bulb, 'light', override).brightness, 100);
+    assert.equal(overrideSettled(override, entityView(bulb, 'light'), Date.now()), true, 'on/off bulb settles');
+    const gone = state('light.gone', 'unavailable', { supported_color_modes: ['brightness'] });
+    assert.equal(entityView(gone, 'light', override).brightness, 0);
+  });
+
+  it('accepts only plain numbers for rgb_color and never hands back the state array', () => {
+    const tampered = state('light.t', 'on', {
+      supported_color_modes: ['rgb'],
+      rgb_color: ['0;background:url(//example.invalid/x)', 0, 0],
+    });
+    assert.deepEqual(entityView(tampered, 'light').rgb, WARM_GLOW);
+    const plain = state('light.p', 'on', { supported_color_modes: ['rgb'], rgb_color: [1, 2, 3] });
+    const view = entityView(plain, 'light');
+    assert.deepEqual(view.rgb, [1, 2, 3]);
+    assert.notEqual(view.rgb, plain.attributes.rgb_color);
+  });
+});
+
+describe('computeDomain', () => {
+  it('splits at the first dot, and has no domain without one', () => {
+    assert.equal(computeDomain('light.kitchen'), 'light');
+    assert.equal(computeDomain('scenex'), '');
   });
 });
 
